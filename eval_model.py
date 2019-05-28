@@ -8,6 +8,7 @@ import sklearn
 import sklearn.metrics as sklm
 from torch.autograd import Variable
 import numpy as np
+import pdb
 
 
 def make_pred_multilabel(data_transforms, model, PATH_TO_IMAGES):
@@ -55,9 +56,9 @@ def make_pred_multilabel(data_transforms, model, PATH_TO_IMAGES):
         batch_size = true_labels.shape
 
         outputs = model(inputs)
+        outputs = torch.nn.functional.softmax(outputs, dim=1)
         probs = outputs.cpu().data.numpy()
         acc += torch.sum(outputs.argmax(dim=1) == labels)
-        '''
         # get predictions and true values for each item in batch
         for j in range(0, batch_size[0]):
             thisrow = {}
@@ -67,20 +68,27 @@ def make_pred_multilabel(data_transforms, model, PATH_TO_IMAGES):
 
             # iterate over each entry in prediction vector; each corresponds to
             # individual label
-            for k in range(len(dataset.PRED_LABEL)):
-                thisrow["prob_" + dataset.PRED_LABEL[k]] = probs[j, k]
-                truerow[dataset.PRED_LABEL[k]] = true_labels[j, k]
+            if len(dataset.PRED_LABEL)==1:
+                thisrow["prob_" + "hospital0"] = probs[j,0]
+                truerow["hospital0"] = int(true_labels[j]==0)
+            else:
+                for k in range(len(dataset.PRED_LABEL)):
+                    thisrow["prob_" + dataset.PRED_LABEL[k]] = probs[j, k]
+                    truerow[dataset.PRED_LABEL[k]] = true_labels[j, k]
 
             pred_df = pred_df.append(thisrow, ignore_index=True)
             true_df = true_df.append(truerow, ignore_index=True)
-        '''
+        
         if(i % 10 == 0):
             print(str(i * BATCH_SIZE))
     print (acc.to(dtype=torch.float32) / ((i+1)*BATCH_SIZE)) 
     auc_df = pd.DataFrame(columns=["label", "auc"])
-
+    pdb.set_trace()
     # calc AUCs
     for column in true_df:
+        if column not in [
+                'hospital0']:
+            continue
         '''
         if column not in [
             'Atelectasis',

@@ -18,7 +18,7 @@ class CXRDataset(Dataset):
 
         self.transform = transform
         self.path_to_images = path_to_images
-        self.df = pd.read_csv("nih_labels.csv")
+        self.df = pd.read_csv("hospital_labels.csv")
         self.df = self.df[self.df['fold'] == fold]
 
         if(starter_images):
@@ -41,6 +41,8 @@ class CXRDataset(Dataset):
                       " as not in data - please check spelling")
 
         self.df = self.df.set_index("Image Index")
+        self.PRED_LABEL = ['Hospital']
+        '''
         self.PRED_LABEL = [
             'Atelectasis',
             'Cardiomegaly',
@@ -56,6 +58,7 @@ class CXRDataset(Dataset):
             'Fibrosis',
             'Pleural_Thickening',
             'Hernia']
+        '''
         RESULT_PATH = "results/"
 
     def __len__(self):

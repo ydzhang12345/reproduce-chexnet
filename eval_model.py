@@ -43,9 +43,12 @@ def make_pred_multilabel(data_transforms, model, PATH_TO_IMAGES):
     true_df = pd.DataFrame(columns=["Image Index"])
 
     # iterate over dataloader
+    acc = 0
     for i, data in enumerate(dataloader):
 
         inputs, labels, _ = data
+        labels = labels.to(dtype=torch.int64)
+        labels = labels.reshape(-1)
         inputs, labels = Variable(inputs.cuda()), Variable(labels.cuda())
 
         true_labels = labels.cpu().data.numpy()
@@ -53,7 +56,8 @@ def make_pred_multilabel(data_transforms, model, PATH_TO_IMAGES):
 
         outputs = model(inputs)
         probs = outputs.cpu().data.numpy()
-
+        acc += torch.sum(outputs.argmax(dim=1) == labels)
+        '''
         # get predictions and true values for each item in batch
         for j in range(0, batch_size[0]):
             thisrow = {}
@@ -69,15 +73,15 @@ def make_pred_multilabel(data_transforms, model, PATH_TO_IMAGES):
 
             pred_df = pred_df.append(thisrow, ignore_index=True)
             true_df = true_df.append(truerow, ignore_index=True)
-
+        '''
         if(i % 10 == 0):
             print(str(i * BATCH_SIZE))
-
+    print (acc.to(dtype=torch.float32) / ((i+1)*BATCH_SIZE)) 
     auc_df = pd.DataFrame(columns=["label", "auc"])
 
     # calc AUCs
     for column in true_df:
-
+        '''
         if column not in [
             'Atelectasis',
             'Cardiomegaly',
@@ -94,6 +98,7 @@ def make_pred_multilabel(data_transforms, model, PATH_TO_IMAGES):
             'Pleural_Thickening',
                 'Hernia']:
                     continue
+        '''
         actual = true_df[column]
         pred = pred_df["prob_" + column]
         thisrow = {}

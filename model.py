@@ -25,6 +25,7 @@ from shutil import rmtree
 import pandas as pd
 import numpy as np
 import csv
+import pdb
 
 import cxr_dataset as CXR
 import eval_model as E
@@ -106,16 +107,18 @@ def train_model(
                 model.train(False)
 
             running_loss = 0.0
-
+            running_acc = 0.0
             i = 0
             total_done = 0
             # iterate over all data in train/val dataloader:
             for data in dataloaders[phase]:
                 i += 1
                 inputs, labels, _ = data
+                labels = labels.to(dtype=torch.int64)
+                labels = labels.reshape(-1)
                 batch_size = inputs.shape[0]
                 inputs = Variable(inputs.cuda())
-                labels = Variable(labels.cuda()).float()
+                labels = Variable(labels.cuda())
                 outputs = model(inputs)
 
                 # calculate gradient and update parameters in train phase
@@ -125,15 +128,16 @@ def train_model(
                     loss.backward()
                     optimizer.step()
 
-                running_loss += loss.data[0] * batch_size
+                running_loss += loss.data * batch_size
+                running_acc += torch.sum(outputs.argmax(dim=1) == labels)
 
             epoch_loss = running_loss / dataset_sizes[phase]
-
+            epoch_accuracy = running_acc.to(dtype=torch.float32) / dataset_sizes[phase]
             if phase == 'train':
                 last_train_loss = epoch_loss
 
-            print(phase + ' epoch {}:loss {:.4f} with data size {}'.format(
-                epoch, epoch_loss, dataset_sizes[phase]))
+            print(phase + ' epoch {}:loss {:.4f}, acc {:.4f} with data size {}'.format(
+                epoch, epoch_loss, epoch_accuracy, dataset_sizes[phase]))
 
             # decay learning rate if no val loss improvement in this epoch
 
@@ -164,11 +168,10 @@ def train_model(
                     if(epoch == 1):
                         logwriter.writerow(["epoch", "train_loss", "val_loss"])
                     logwriter.writerow([epoch, last_train_loss, epoch_loss])
-
+        
         total_done += batch_size
         if(total_done % (100 * batch_size) == 0):
             print("completed " + str(total_done) + " so far in epoch")
-
         # break if no val loss improvement in 3 epochs
         if ((epoch - best_epoch) >= 3):
             print("no improvement in 3 epochs, break")
@@ -212,15 +215,14 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     mean = [0.485, 0.456, 0.406]
     std = [0.229, 0.224, 0.225]
 
-    N_LABELS = 14  # we are predicting 14 labels
+    N_LABELS = 2  # we are predicting 14 labels
 
     # load labels
-    df = pd.read_csv("nih_labels.csv", index_col=0)
+    df = pd.read_csv("hospital_labels.csv", index_col=0)
 
     # define torchvision transforms
     data_transforms = {
         'train': transforms.Compose([
-            transforms.RandomHorizontalFlip(),
             transforms.Scale(224),
             # because scale doesn't always give 224 x 224, this ensures 224 x
             # 224
@@ -267,13 +269,13 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     # add final layer with # outputs in same dimension of labels with sigmoid
     # activation
     model.classifier = nn.Sequential(
-        nn.Linear(num_ftrs, N_LABELS), nn.Sigmoid())
+        nn.Linear(num_ftrs, N_LABELS))#, nn.Sigmoid())
 
     # put model on GPU
     model = model.cuda()
 
     # define criterion, optimizer for training
-    criterion = nn.BCELoss()
+    criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(
         filter(
             lambda p: p.requires_grad,

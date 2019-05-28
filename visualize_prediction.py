@@ -22,7 +22,9 @@ import pandas as pd
 from copy import deepcopy
 import cxr_dataset as CXR
 import eval_model as E
+import pdb
 
+FINDINGS = ['Hospital']
 def calc_cam(x, label, model):
     """
     function to generate a class activation map corresponding to a torch image tensor
@@ -35,6 +37,7 @@ def calc_cam(x, label, model):
     Returns:
         cam_torch: 224x224 torch tensor containing activation map
     """
+    '''
     FINDINGS = [
         'Atelectasis',
         'Cardiomegaly',
@@ -50,6 +53,7 @@ def calc_cam(x, label, model):
         'Fibrosis',
         'Pleural_Thickening',
         'Hernia']
+    '''
 
     if label not in FINDINGS:
         raise ValueError(
@@ -120,7 +124,8 @@ def calc_cam(x, label, model):
     #make cam into local region probabilities with sigmoid
     
     cam=1/(1+np.exp(-cam))
-    
+    label_baseline_probs = {'Hospital':0.546}
+    '''
     label_baseline_probs={
         'Atelectasis':0.103,
         'Cardiomegaly':0.025,
@@ -137,6 +142,7 @@ def calc_cam(x, label, model):
         'Pleural_Thickening':0.03,
         'Hernia':0.002
     }
+    '''
     
     #normalize by baseline probabilities
     cam = cam/label_baseline_probs[label]
@@ -175,7 +181,7 @@ def load_data(
     # build dataloader on test
     mean = [0.485, 0.456, 0.406]
     std = [0.229, 0.224, 0.225]
-
+    '''
     FINDINGS = [
         'Atelectasis',
         'Cardiomegaly',
@@ -191,6 +197,7 @@ def load_data(
         'Fibrosis',
         'Pleural_Thickening',
         'Hernia']
+    '''
 
     data_transform = transforms.Compose([
         transforms.Scale(224),
@@ -210,7 +217,7 @@ def load_data(
         transform=data_transform,
         finding=finding,
         starter_images=STARTER_IMAGES)
-    
+
     dataloader = torch.utils.data.DataLoader(
         dataset, batch_size=1, shuffle=False, num_workers=1)
     
@@ -228,6 +235,7 @@ def show_next(dataloader, model, LABEL):
     Returns:
         None (plots output)
     """
+    '''
     FINDINGS = [
         'Atelectasis',
         'Cardiomegaly',
@@ -243,13 +251,13 @@ def show_next(dataloader, model, LABEL):
         'Fibrosis',
         'Pleural_Thickening',
         'Hernia']
-    
+    '''
     label_index = next(
         (x for x in range(len(FINDINGS)) if FINDINGS[x] == LABEL))
-
     # get next iter from dataloader
     try:
         inputs, labels, filename = next(dataloader)
+        print(inputs, labels, filename)
     except StopIteration:
         print("All examples exhausted - rerun cells above to generate new examples to review")
         return None
@@ -260,6 +268,7 @@ def show_next(dataloader, model, LABEL):
     
     # create predictions for label of interest and all labels
     pred = model(torch.autograd.Variable(original.cpu())).data.numpy()[0]
+    print(pred)
     predx = ['%.3f' % elem for elem in list(pred)]
     
     fig, (showcxr,heatmap) =plt.subplots(ncols=2,figsize=(14,5))

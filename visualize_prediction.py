@@ -114,17 +114,23 @@ def calc_cam(x, label, model):
     #print(model(x).data.numpy()[0][label_index])
 
     # create 7x7 cam
-    cam = np.zeros((7, 7, 1))
+    # label_index = 0
+    num_class = 2
+    cam = np.zeros((7, 7, num_class))
     for i in range(0, 7):
         for j in range(0, 7):
             for k in range(0, 1024):
-                cam[i, j] += y[k, i, j] * weights[label_index, k]
-    cam+=bias[label_index]
+                for label_index in range(num_class):
+                    cam[i, j, label_index] += y[k, i, j] * weights[label_index, k] + bias[label_index]
+
+    #pdb.set_trace()
+    diff_cam = cam[:, :, 0] - cam[:, :, 1]
+    diff_cam -= np.mean(diff_cam)
+
 
     #make cam into local region probabilities with sigmoid
-    
-    cam=1/(1+np.exp(-cam))
-    label_baseline_probs = {'Hospital':0.546}
+    #cam=1/(1+np.exp(-cam))
+    #label_baseline_probs = {'Hospital':0.546}
     '''
     label_baseline_probs={
         'Atelectasis':0.103,
@@ -144,13 +150,16 @@ def calc_cam(x, label, model):
     }
     '''
     
+    '''
     #normalize by baseline probabilities
     cam = cam/label_baseline_probs[label]
     
     #take log
     cam = np.log(cam)
+    '''
     
-    return cam
+    #return cam
+    return diff_cam
 
 def load_data(
         PATH_TO_IMAGES,
@@ -254,6 +263,7 @@ def show_next(dataloader, model, LABEL):
     '''
     label_index = next(
         (x for x in range(len(FINDINGS)) if FINDINGS[x] == LABEL))
+    pdb.set_trace()
     # get next iter from dataloader
     try:
         inputs, labels, filename = next(dataloader)
@@ -296,7 +306,7 @@ def show_next(dataloader, model, LABEL):
     showcxr.imshow(cxr)
     showcxr.axis('off')
     showcxr.set_title(filename[0])
-    plt.savefig(str(LABEL+"_P"+str(predx[label_index])+"_file_"+filename[0]))
+    plt.savefig(str(LABEL+"_P"+str(predx[label_index])+"_file_"+filename[0].split('/')[-1]))
     plt.show()
     
     

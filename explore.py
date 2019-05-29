@@ -6,11 +6,11 @@ import pandas as pd
 import warnings
 warnings.filterwarnings('ignore')
 
-STARTER_IMAGES=True
-PATH_TO_IMAGES = "starter_images/"
+#STARTER_IMAGES=True
+#PATH_TO_IMAGES = "starter_images/"
 
-#STARTER_IMAGES=False
-#PATH_TO_IMAGES = "your path to NIH data here"
+STARTER_IMAGES=False
+PATH_TO_IMAGES = "/home/ben/Desktop/MIBLab/"
 
 PATH_TO_MODEL = "results/checkpoint"
 

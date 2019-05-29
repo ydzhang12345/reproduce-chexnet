@@ -1,6 +1,6 @@
 # reproduce-chexnet
 
-## This forked repo will mainly focus on the hospital systyem prediction
+## This forked repo will mainly focus on the hospital systyem prediction. The readme section is currently under-developed, will update soon
 
 [![Binder](https://mybinder.org/badge.svg)](https://mybinder.org/v2/gh/jrzech/reproduce-chexnet/master?filepath=Explore_Predictions.ipynb)
 

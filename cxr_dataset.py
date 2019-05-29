@@ -70,7 +70,7 @@ class CXRDataset(Dataset):
         image = Image.open(
             os.path.join(
                 self.path_to_images,
-                self.df.index[idx].split('/')[-1]))
+                self.df.index[idx]))
         image = image.convert('RGB')
 
         label = np.zeros(len(self.PRED_LABEL), dtype=int)

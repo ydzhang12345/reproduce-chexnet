@@ -83,7 +83,6 @@ def make_pred_multilabel(data_transforms, model, PATH_TO_IMAGES):
             print(str(i * BATCH_SIZE))
     print (acc.to(dtype=torch.float32) / ((i+1)*BATCH_SIZE)) 
     auc_df = pd.DataFrame(columns=["label", "auc"])
-    pdb.set_trace()
     # calc AUCs
     for column in true_df:
         if column not in [

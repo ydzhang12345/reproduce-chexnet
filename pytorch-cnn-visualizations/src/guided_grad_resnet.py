@@ -1,3 +1,4 @@
+import os
 import io
 import torch
 from PIL import Image
@@ -8,6 +9,7 @@ import numpy as np
 import cv2
 import pdb
 from guided_backprop import GuidedBackprop
+import pandas as pd
 
 
 def get_cam(image_path, net):
@@ -49,7 +51,7 @@ def get_cam(image_path, net):
 
 
 	img_pil = Image.open(img_path).convert('RGB')
-	img_pil.save('test.jpg')
+	img_pil.save(out_path + 'test.jpg')
 
 	img_tensor = preprocess(img_pil)
 	img_variable = Variable(img_tensor.unsqueeze(0))
@@ -84,7 +86,7 @@ def get_cam(image_path, net):
 	result = heatmap * 0.3 + img * 0.5
 	cv2.imwrite('CAM.jpg', result
 	'''
-	return CAMs[0]
+	return CAMs[0], idx[0]
 
 
 def preprocess_image(pil_im, resize_im=True):
@@ -100,11 +102,10 @@ def preprocess_image(pil_im, resize_im=True):
     # mean and std list for channels (Imagenet)
     mean = [0.485, 0.456, 0.406]
     std = [0.229, 0.224, 0.225]
-
-    #pdb.set_trace()
     # Resize image
     if resize_im:
-        pil_im.thumbnail((224, 224))
+    	pil_im = pil_im.resize((224, 224))
+        #pil_im.thumbnail((224, 224))
     im_as_arr = np.float32(pil_im)
     im_as_arr = im_as_arr.transpose(2, 0, 1)  # Convert array to D,W,H
     # Normalize the channels
@@ -139,42 +140,56 @@ def convert_to_grayscale(im_as_arr):
     return grayscale_im
 
 
-path_model = '/home/lwv/Downloads/reproduce-chexnet/ResNet101-results/checkpoint'
+#path_model = '/home/lwv/Downloads/reproduce-chexnet/ResNet101-results/checkpoint'
+path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/ResNet101-results/checkpoint'
 checkpoint = torch.load(path_model, map_location=lambda storage, loc: storage)
 net = checkpoint['model']
 del checkpoint
 net.eval()
 
-img_path = '/home/lwv/Downloads/reproduce-chexnet/starter_images/00000284_000.png'
-cam = get_cam(img_path, net)
 
-img = cv2.imread('test.jpg')
-height, width, _ = img.shape
-heatmap = cv2.applyColorMap(cv2.resize(cam,(width, height)), cv2.COLORMAP_JET)
-result = heatmap * 0.3 + img * 0.5
-cv2.imwrite('CAM.jpg', result)
+#img_path = '/home/lwv/Downloads/reproduce-chexnet/starter_images/00000284_000.png'
+df = pd.read_csv("/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/hospital_labels.csv")
+df = df[df['fold'] == 'test']
+df = df.set_index("Image Index")
+out = 'guided_grad_resnet/'
+
+test_size = 56405
+np.random.seed(2019)
+class_name = ['NIH', 'CheXpert']
+for ii in range(100):
+	out_path = out + str(ii) + '/'
+	os.mkdir(out_path)
+	ind = int(np.random.sample() * test_size)
+	img_path = '/home/ben/Desktop/MIBLab/' + df.index[ind]
+
+	# get top1-prediction cam 
+	cam, class_idx = get_cam(img_path, net)
+	img = cv2.imread(out_path + 'test.jpg')
+	height, width, _ = img.shape
+	heatmap = cv2.applyColorMap(cv2.resize(cam,(width, height)), cv2.COLORMAP_JET)
+	result = heatmap * 0.3 + img * 0.5
+	cv2.imwrite(out_path + class_name[class_idx] + '-CAM.jpg', result)
+
+	# Guided backprop
+	GBP = GuidedBackprop(net)
+	# Get gradients
+	# Read image
+	original_image = Image.open(img_path).convert('RGB')
+	# Process image
+	prep_img = preprocess_image(original_image)
+	target_class = class_idx
+	guided_grads = convert_to_grayscale(GBP.generate_gradients(prep_img, target_class))
+
+	final_img = cam * guided_grads[0]
+	final_img = (final_img - final_img.min()) / (final_img.max() - final_img.min())
+	final_img = np.uint8(255 * final_img)
 
 
-
-# Guided backprop
-GBP = GuidedBackprop(net)
-# Get gradients
-# Read image
-original_image = Image.open(img_path).convert('RGB')
-# Process image
-prep_img = preprocess_image(original_image)
-target_class = 0
-guided_grads = convert_to_grayscale(GBP.generate_gradients(prep_img, target_class))
-
-final_img = cam * guided_grads[0]
-final_img = (final_img - final_img.min()) / (final_img.max() - final_img.min())
-final_img = np.uint8(255 * final_img)
-
-
-# render the CAM and output
-#print('output CAM.jpg for the top1 prediction: %s'%classes[idx[0]])
-img = cv2.imread('test.jpg')
-height, width, _ = img.shape
-heatmap = cv2.applyColorMap(cv2.resize(final_img,(width, height)), cv2.COLORMAP_JET)
-result = heatmap * 0.3 + img * 0.5
-cv2.imwrite('Guided-CAM.jpg', result)
+	# render the CAM and output
+	#print('output CAM.jpg for the top1 prediction: %s'%classes[idx[0]])
+	img = cv2.imread(out_path + 'test.jpg')
+	height, width, _ = img.shape
+	heatmap = cv2.applyColorMap(cv2.resize(final_img,(width, height)), cv2.COLORMAP_JET)
+	result = heatmap * 0.3 + img * 0.5
+	cv2.imwrite(out_path + 'Guided-CAM-' + class_name[class_idx] + '.jpg', result)

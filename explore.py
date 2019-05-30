@@ -9,10 +9,10 @@ warnings.filterwarnings('ignore')
 #STARTER_IMAGES=True
 #PATH_TO_IMAGES = "starter_images/"
 
-STARTER_IMAGES=False
-PATH_TO_IMAGES = "/home/ben/Desktop/MIBLab/"
+STARTER_IMAGES= False
+PATH_TO_IMAGES = "/home/lwv/Downloads/reproduce-chexnet/starter_images/"
 
-PATH_TO_MODEL = "results/checkpoint"
+PATH_TO_MODEL = "DenseNet121-results/checkpoint"
 
 LABEL="Hospital"
 

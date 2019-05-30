@@ -6,7 +6,7 @@ Created on Thu Oct 26 11:06:51 2017
 from PIL import Image
 import numpy as np
 import torch
-
+import pdb
 from misc_functions import get_example_params, save_class_activation_images
 
 
@@ -26,12 +26,35 @@ class CamExtractor():
         """
             Does a forward pass on convolutions, hooks the function at given layer
         """
+
+        '''
+        class densenet_last_layer(torch.nn.Module):
+            def __init__(self, model):
+                super(densenet_last_layer, self).__init__()
+                self.features = torch.nn.Sequential(
+                    *list(model.children())[:-1]
+                )
+
+            def forward(self, x):
+                x = self.features(x)
+                x = torch.nn.functional.relu(x, inplace=True)
+                return x
+
+        model_cam = densenet_last_layer(self.model)
+        x = torch.autograd.Variable(x)
+        y = model_cam(x)
+        y = y.cpu().data.numpy()
+        y = np.squeeze(y)
+
+        pdb.set_trace()
+        '''
         conv_output = None
         for module_pos, module in self.model.features._modules.items():
             x = module(x)  # Forward
-            if int(module_pos) == self.target_layer:
+            if module_pos == self.target_layer:
                 x.register_hook(self.save_gradient)
                 conv_output = x  # Save the convolution output on that layer
+
         return conv_output, x
 
     def forward_pass(self, x):
@@ -39,11 +62,13 @@ class CamExtractor():
             Does a full forward pass on the model
         """
         # Forward pass on the convolutions
+        model_out = self.model(x)
         conv_output, x = self.forward_pass_on_convolutions(x)
-        x = x.view(x.size(0), -1)  # Flatten
+        #x = x.view(x.size(0), -1)  # Flatten
         # Forward pass on the classifier
-        x = self.model.classifier(x)
-        return conv_output, x
+        #x = self.model.classifier(x)
+
+        return conv_output, model_out
 
 
 class GradCam():
@@ -52,6 +77,7 @@ class GradCam():
     """
     def __init__(self, model, target_layer):
         self.model = model
+
         self.model.eval()
         # Define extractor
         self.extractor = CamExtractor(self.model, target_layer)
@@ -60,6 +86,7 @@ class GradCam():
         # Full forward pass
         # conv_output is the output of convolutions at specified layer
         # model_output is the final output of the model (1, 1000)
+        pdb.set_trace()
         conv_output, model_output = self.extractor.forward_pass(input_image)
         if target_class is None:
             target_class = np.argmax(model_output.data.numpy())
@@ -98,11 +125,11 @@ class GradCam():
 
 if __name__ == '__main__':
     # Get params
-    target_example = 0  # Snake
+    target_example = 0  # NIH
     (original_image, prep_img, target_class, file_name_to_export, pretrained_model) =\
         get_example_params(target_example)
     # Grad cam
-    grad_cam = GradCam(pretrained_model, target_layer=11)
+    grad_cam = GradCam(pretrained_model, target_layer='norm5')
     # Generate cam mask
     cam = grad_cam.generate_cam(prep_img, target_class)
     # Save mask

@@ -80,6 +80,7 @@ def calc_cam(x, label, model):
             return x
 
     # instantiate cam model and get output
+    pdb.set_trace()
     model_cam = densenet_last_layer(model)
     x = torch.autograd.Variable(x)
     y = model_cam(x)

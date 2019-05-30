@@ -29,6 +29,7 @@ from torch.autograd import Variable
 import torchvision
 import torchvision.transforms as T
 import random
+import pdb
 
 import numpy as np
 from scipy.ndimage.filters import gaussian_filter1d
@@ -137,8 +138,9 @@ def create_class_visualization(target_y, model, dtype, **kwargs):
         # Forward pass.
         scores = model(img_var)
         
+        #pdb.set_trace()
         # Score for the target class.
-        target_score = scores[0,target_y] 
+        target_score = scores[0, target_y] 
         
         # Backward pass to get gradient wrt image.
         target_score.backward()
@@ -169,12 +171,14 @@ def create_class_visualization(target_y, model, dtype, **kwargs):
         class_names = ['NIH', 'CheXpert']
         # Periodically show the image
         if t == 0 or (t + 1) % show_every == 0 or t == num_iterations - 1:
+            learning_rate /= 2.0
+            print(target_score)
             plt.imshow(deprocess(img.clone().cpu()))
             class_name = class_names[target_y]
             plt.title('%s\nIteration %d / %d' % (class_name, t + 1, num_iterations))
             plt.gcf().set_size_inches(4, 4)
             plt.axis('off')
-            plt.show()
+            plt.savefig('class_specific_samples/' + str(t) + '.png')
 
     return deprocess(img.cpu())
 
@@ -185,7 +189,7 @@ def create_class_visualization(target_y, model, dtype, **kwargs):
 
 
 #path_images = '/home/lovebb/Documents/MIBLab/chest-Xray-dataset'
-path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/checkpoint'
+path_model = '/home/lwv/Downloads/reproduce-chexnet/ResNet101-results/checkpoint'
 
 checkpoint = torch.load(path_model, map_location=lambda storage, loc: storage)
 model = checkpoint['model']
@@ -195,27 +199,10 @@ dtype = torch.FloatTensor
 # dtype = torch.cuda.FloatTensor # Uncomment this to use GPU
 model.type(dtype)
 
-target_y = 1 # Tarantula
+target_y = 0 # Tarantula
 # target_y = 78 # Tick
 # target_y = 187 # Yorkshire Terrier
 # target_y = 683 # Oboe
 # target_y = 366 # Gorilla
 # target_y = 604 # Hourglass
 out = create_class_visualization(target_y, model, dtype)
-
-
-'''
-# Try out your class visualization on other classes! You should also feel free to play with various hyperparameters to try and improve the quality of the generated image, but this is not required.
-
-# In[87]:
-
-
-# target_y = 78 # Tick
-# target_y = 187 # Yorkshire Terrier
-# target_y = 683 # Oboe
-# target_y = 366 # Gorilla
-# target_y = 604 # Hourglass
-target_y = np.random.randint(1000)
-print(class_names[target_y])
-X = create_class_visualization(target_y, model, dtype)
-'''

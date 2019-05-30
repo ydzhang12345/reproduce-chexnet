@@ -8,7 +8,7 @@ import copy
 import numpy as np
 from PIL import Image
 import matplotlib.cm as mpl_color_map
-
+import pdb
 import torch
 from torch.autograd import Variable
 from torchvision import models
@@ -151,9 +151,11 @@ def preprocess_image(pil_im, resize_im=True):
     # mean and std list for channels (Imagenet)
     mean = [0.485, 0.456, 0.406]
     std = [0.229, 0.224, 0.225]
+
+    #pdb.set_trace()
     # Resize image
     if resize_im:
-        pil_im.thumbnail((512, 512))
+        pil_im.thumbnail((224, 224))
     im_as_arr = np.float32(pil_im)
     im_as_arr = im_as_arr.transpose(2, 0, 1)  # Convert array to D,W,H
     # Normalize the channels
@@ -221,9 +223,9 @@ def get_example_params(example_index):
         pretrained_model(Pytorch model): Model to use for the operations
     """
     # Pick one of the examples
-    example_list = (('../input_images/snake.jpg', 56),
-                    ('../input_images/cat_dog.png', 243),
-                    ('../input_images/spider.png', 72))
+    example_list = (('/home/lwv/Downloads/reproduce-chexnet/starter_images/00000075_000.png', 0),
+                    ('/home/lwv/Downloads/reproduce-chexnet/starter_images/00000100_000.png', 0),
+                    ('/home/lwv/Downloads/reproduce-chexnet/starter_images/00000129_000.png', 0))
     img_path = example_list[example_index][0]
     target_class = example_list[example_index][1]
     file_name_to_export = img_path[img_path.rfind('/')+1:img_path.rfind('.')]
@@ -232,7 +234,12 @@ def get_example_params(example_index):
     # Process image
     prep_img = preprocess_image(original_image)
     # Define model
-    pretrained_model = models.alexnet(pretrained=True)
+    #pretrained_model = models.alexnet(pretrained=True)
+    path_model = '/home/lwv/Downloads/reproduce-chexnet/DenseNet121-results/checkpoint'
+    checkpoint = torch.load(path_model, map_location=lambda storage, loc: storage)
+    pretrained_model = checkpoint['model']
+    del checkpoint
+
     return (original_image,
             prep_img,
             target_class,

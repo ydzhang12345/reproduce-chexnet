@@ -66,7 +66,6 @@ class CXRDataset(Dataset):
         return len(self.df)
 
     def __getitem__(self, idx):
-
         image = Image.open(
             os.path.join(
                 self.path_to_images,

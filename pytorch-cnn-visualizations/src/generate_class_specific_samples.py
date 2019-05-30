@@ -19,22 +19,21 @@ class ClassSpecificImageGeneration():
         Produces an image that maximizes a certain class with gradient ascent
     """
     def __init__(self, model, target_class):
-        self.mean = [-0.485, -0.456, -0.406]
-        self.std = [1/0.229, 1/0.224, 1/0.225]
         self.model = model
         self.model.eval()
         self.target_class = target_class
         # Generate a random image
         self.created_image = np.uint8(np.random.uniform(0, 255, (224, 224, 3)))
         # Create the folder to export images if not exists
-        if not os.path.exists('../generated'):
-            os.makedirs('../generated')
+        if not os.path.exists('./generate_class_specific'):
+            os.makedirs('./generate_class_specific')
 
     def generate(self):
-        initial_learning_rate = 6
+        initial_learning_rate = 25
         for i in range(1, 1000):
             # Process image and return variable
             self.processed_image = preprocess_image(self.created_image, False)
+            #pdb.set_trace()
             # Define optimizer for the image
             optimizer = SGD([self.processed_image], lr=initial_learning_rate)
             # Forward
@@ -51,18 +50,18 @@ class ClassSpecificImageGeneration():
             optimizer.step()
             # Recreate image
             self.created_image = recreate_image(self.processed_image)
-            if i % 50 == 0:
+            if i % 100 == 0:
                 # Save image
-                im_path = '../generated/c_specific_iteration_'+str(i)+'.jpg'
+                #initial_learning_rate /= 2
+                im_path = './generate_class_specific/c_specific_l2_iteration_'+str(i)+'.jpg'
                 save_image(self.created_image, im_path)
         return self.processed_image
 
 
 if __name__ == '__main__':
-    target_class = 1  # CheXpert
+    target_class = 0 # NIH
 
-    #path_images = '/home/lovebb/Documents/MIBLab/chest-Xray-dataset'
-    path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/checkpoint'
+    path_model = '/home/lwv/Downloads/reproduce-chexnet/DenseNet101-results/checkpoint'
 
     checkpoint = torch.load(path_model, map_location=lambda storage, loc: storage)
     model = checkpoint['model']

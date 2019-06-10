@@ -74,15 +74,13 @@ class CXRDataset(Dataset):
 
         label = np.zeros(len(self.PRED_LABEL), dtype=int)
 
-        '''
         for i in range(0, len(self.PRED_LABEL)):
              # can leave zero if zero, else make one
              
             if(self.df[self.PRED_LABEL[i].strip()].iloc[idx].astype('int') > 0):
                 label[i] = self.df[self.PRED_LABEL[i].strip()
                                    ].iloc[idx].astype('int')
-            
-        '''
+             
         if self.transform:
             image = self.transform(image)
 

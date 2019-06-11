@@ -19,7 +19,7 @@ class CXRDataset(Dataset):
 
         self.transform = transform
         self.path_to_images = path_to_images
-        self.df = pd.read_csv("hospital_labels.csv")
+        self.df = pd.read_csv("labels.csv")
         self.df = self.df[self.df['fold'] == fold]
 
         if(starter_images):
@@ -42,24 +42,15 @@ class CXRDataset(Dataset):
                       " as not in data - please check spelling")
 
         self.df = self.df.set_index("Image Index")
-        self.PRED_LABEL = ['Hospital']
-        '''
-        self.PRED_LABEL = [
+        self.PRED_LABEL_DATASET = ['Dataset ID']
+        
+        self.PRED_LABEL_DISEASE = [
             'Atelectasis',
             'Cardiomegaly',
-            'Effusion',
-            'Infiltration',
-            'Mass',
-            'Nodule',
-            'Pneumonia',
-            'Pneumothorax',
             'Consolidation',
             'Edema',
-            'Emphysema',
-            'Fibrosis',
-            'Pleural_Thickening',
-            'Hernia']
-        '''
+            'Effusion']
+        
         RESULT_PATH = "results/"
 
     def __len__(self):
@@ -72,16 +63,24 @@ class CXRDataset(Dataset):
                 self.df.index[idx]))
         image = image.convert('RGB')
 
-        label = np.zeros(len(self.PRED_LABEL), dtype=int)
+        label_dataset = np.zeros(len(self.PRED_LABEL_DATASET), dtype=int)
+        label_disease = np.zeros(len(self.PRED_LABEL_DISEASE), dtype=int)
 
-        for i in range(0, len(self.PRED_LABEL)):
+        for i in range(0, len(self.PRED_LABEL_DATASET)):
              # can leave zero if zero, else make one
              
-            if(self.df[self.PRED_LABEL[i].strip()].iloc[idx].astype('int') > 0):
-                label[i] = self.df[self.PRED_LABEL[i].strip()
+            if(self.df[self.PRED_LABEL_DATASET[i].strip()].iloc[idx].astype('int') > 0):
+                label_dataset[i] = self.df[self.PRED_LABEL_DATASET[i].strip()
+                                   ].iloc[idx].astype('int')
+
+        for i in range(0, len(self.PRED_LABEL_DISEASE)):
+             # can leave zero if zero, else make one
+             
+            if(self.df[self.PRED_LABEL_DISEASE[i].strip()].iloc[idx].astype('int') > 0):
+                label_disease[i] = self.df[self.PRED_LABEL_DISEASE[i].strip()
                                    ].iloc[idx].astype('int')
              
         if self.transform:
             image = self.transform(image)
 
-        return (image, label,self.df.index[idx])
+        return (image, label_disease, label_dataset, self.df.index[idx])

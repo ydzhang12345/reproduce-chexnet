@@ -189,6 +189,7 @@ def train_model(
     return model, best_epoch
 
 
+'''
 class multi_output_model(torch.nn.Module):
     def __init__(self, model_core, dropout_ratio):
         super(multi_output_model, self).__init__()
@@ -270,6 +271,7 @@ def densenet121_hex(input_data):
     print(model_1)
     print(model_1.parameters())    
     criterion = [nn.CrossEntropyLoss(),nn.CrossEntropyLoss(),nn.CrossEntropyLoss(),nn.CrossEntropyLoss(),nn.BCELoss()]
+'''
 
 
 
@@ -350,8 +352,12 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     if not use_gpu:
         raise ValueError("Error, requires GPU")
 
-    model_ft = models.densenet121(pretrained=True)
-    model_1 = multi_output_model(model_ft, dropout_ratio=0.2)
+    model = models.densenet121(pretrained=True)
+    del model.classifier
+    model.classifier = nn.Identity()
+    
+
+    #model_1 = multi_output_model(model_ft, dropout_ratio=0.2)
 
     #model_1 = model_1.to(device)
 

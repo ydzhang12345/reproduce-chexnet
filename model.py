@@ -10,6 +10,7 @@ import torchvision
 from torchvision import datasets, models, transforms
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms, utils
+import torch.nn.functional as F
 
 # image imports
 from skimage import io, transform
@@ -188,72 +189,81 @@ def train_model(
     return model, best_epoch
 
 
-def densenet121_hex(input_data):
-    model_ft = models.resnet50(pretrained=True)
-    #for param in model_ft.parameters():
-    #    param.requires_grad = False
-    print(model_ft)
-    #num_ftrs = model_ft.classifier[6].in_features
-    num_ftrs = model_ft.fc.in_features
-    model_ft.fc = nn.Linear(num_ftrs, 512)
+class multi_output_model(torch.nn.Module):
+    def __init__(self, model_core, dropout_ratio):
+        super(multi_output_model, self).__init__()
+        
+        self.densenet_model = model_core
 
-    class multi_output_model(torch.nn.Module):
-        def __init__(self, model_core,dd):
-            super(multi_output_model, self).__init__()
-            
-            self.resnet_model = model_core
-            
-            self.x1 =  nn.Linear(512,256)
-            nn.init.xavier_normal_(self.x1.weight)
-            
-            self.bn1 = nn.BatchNorm1d(256,eps = 2e-1)
-            self.x2 =  nn.Linear(256,256)
-            nn.init.xavier_normal_(self.x2.weight)
-            self.bn2 = nn.BatchNorm1d(256,eps = 2e-1)
-            #self.x3 =  nn.Linear(64,32)
-            #nn.init.xavier_normal_(self.x3.weight)
-            #comp head 1
-            
-            
-            #heads
-            self.y1o = nn.Linear(256,gender_nodes)
-            nn.init.xavier_normal_(self.y1o.weight)#
-            self.y2o = nn.Linear(256,region_nodes)
-            nn.init.xavier_normal_(self.y2o.weight)
-            self.y3o = nn.Linear(256,fighting_nodes)
-            nn.init.xavier_normal_(self.y3o.weight)
-            self.y4o = nn.Linear(256,alignment_nodes)
-            nn.init.xavier_normal_(self.y4o.weight)
-            self.y5o = nn.Linear(256,color_nodes)
-            nn.init.xavier_normal_(self.y5o.weight)
-            
-            
-            self.d_out = nn.Dropout(dd)
-        def forward(self, x):
-           
-            x1 = self.resnet_model(x)
-            #x1 =  F.relu(self.x1(x1))
-            #x1 =  F.relu(self.x2(x1))
-            
-            x1 =  self.bn1(F.relu(self.x1(x1)))
-            x1 =  self.bn2(F.relu(self.x2(x1)))
-            #x = F.relu(self.x2(x))
-            #x1 = F.relu(self.x3(x))
-            
-            # heads
-            y1o = F.softmax(self.y1o(x1),dim=1)
-            y2o = F.softmax(self.y2o(x1),dim=1)
-            y3o = F.softmax(self.y3o(x1),dim=1)
-            y4o = F.softmax(self.y4o(x1),dim=1)
-            y5o = torch.sigmoid(self.y5o(x1)) #should be sigmoid
-            
-            #y1o = self.y1o(x1)
-            #y2o = self.y2o(x1)
-            #y3o = self.y3o(x1)
-            #y4o = self.y4o(x1)
-            #y5o = self.y5o(x1) #should be sigmoid
-            
-            return y1o, y2o, y3o, y4o, y5o
+        #https://blog.csdn.net/Geek_of_CSDN/article/details/90179421
+        
+        self.x1 =  nn.Linear(512, 256)
+        nn.init.xavier_normal_(self.x1.weight)
+        
+        self.bn1 = nn.BatchNorm1d(256, eps = 2e-1)
+        self.x2 =  nn.Linear(256, 256)
+        nn.init.xavier_normal_(self.x2.weight)
+        self.bn2 = nn.BatchNorm1d(256, eps = 2e-1)
+        #self.x3 =  nn.Linear(64,32)
+        #nn.init.xavier_normal_(self.x3.weight)
+        #comp head 1
+        
+        
+        #heads
+        self.y1o = nn.Linear(256,gender_nodes)
+        nn.init.xavier_normal_(self.y1o.weight)#
+        self.y2o = nn.Linear(256,region_nodes)
+        nn.init.xavier_normal_(self.y2o.weight)
+        self.y3o = nn.Linear(256,fighting_nodes)
+        nn.init.xavier_normal_(self.y3o.weight)
+        self.y4o = nn.Linear(256,alignment_nodes)
+        nn.init.xavier_normal_(self.y4o.weight)
+        self.y5o = nn.Linear(256,color_nodes)
+        nn.init.xavier_normal_(self.y5o.weight)
+        
+        
+        self.d_out = nn.Dropout(dd)
+    def forward(self, x):
+       
+        x1 = self.resnet_model(x)
+        #x1 =  F.relu(self.x1(x1))
+        #x1 =  F.relu(self.x2(x1))
+        
+        x1 =  self.bn1(F.relu(self.x1(x1)))
+        x1 =  self.bn2(F.relu(self.x2(x1)))
+        #x = F.relu(self.x2(x))
+        #x1 = F.relu(self.x3(x))
+        
+        # heads
+        y1o = F.softmax(self.y1o(x1),dim=1)
+        y2o = F.softmax(self.y2o(x1),dim=1)
+        y3o = F.softmax(self.y3o(x1),dim=1)
+        y4o = F.softmax(self.y4o(x1),dim=1)
+        y5o = torch.sigmoid(self.y5o(x1)) #should be sigmoid
+        
+        #y1o = self.y1o(x1)
+        #y2o = self.y2o(x1)
+        #y3o = self.y3o(x1)
+        #y4o = self.y4o(x1)
+        #y5o = self.y5o(x1) #should be sigmoid
+        
+        return y1o, y2o, y3o, y4o, y5o
+
+
+def densenet121_hex(input_data):
+    model_ft = models.densenet121(pretrained=True)
+
+
+    #num_ftrs = model.classifier.in_features
+    # add final layer with # outputs in same dimension of labels with sigmoid
+    # activation
+    #model.classifier = nn.Sequential(
+    #    nn.Linear(num_ftrs, N_LABELS))#, nn.Sigmoid())
+
+
+    #num_ftrs = model_ft.fc.in_features
+    #model_ft.fc = nn.Linear(num_ftrs, 512)
+
     dd = .1
     model_1 = multi_output_model(model_ft,dd)
     model_1 = model_1.to(device)
@@ -339,8 +349,11 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     # please do not attempt to train without GPU as will take excessively long
     if not use_gpu:
         raise ValueError("Error, requires GPU")
-    model = models.densenet121(pretrained=True)
-    feature_disease, feature_dataset = densenet121_hex 
+
+    model_ft = models.densenet121(pretrained=True)
+    model_1 = multi_output_model(model_ft, dropout_ratio=0.2)
+
+    #model_1 = model_1.to(device)
 
     #pdb.set_trace()
 

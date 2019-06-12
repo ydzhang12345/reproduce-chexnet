@@ -63,7 +63,8 @@ def checkpoint(model, best_loss, epoch, LR):
 
 def train_model(
         model,
-        criterion,
+        criterion1,
+        criterion2,
         optimizer,
         LR,
         num_epochs,
@@ -111,6 +112,8 @@ def train_model(
             running_acc = 0.0
             i = 0
             total_done = 0
+
+            pdb.set_trace()
             # iterate over all data in train/val dataloader:
             for data in dataloaders[phase]:
                 i += 1
@@ -189,68 +192,64 @@ def train_model(
     return model, best_epoch
 
 
-'''
+
 class multi_output_model(torch.nn.Module):
     def __init__(self, model_core, dropout_ratio):
         super(multi_output_model, self).__init__()
         
         self.densenet_model = model_core
+        self.num_dataset = 2
 
         #https://blog.csdn.net/Geek_of_CSDN/article/details/90179421
         
-        self.x1 =  nn.Linear(512, 256)
+        self.x1 =  nn.Linear(1024, 64)
         nn.init.xavier_normal_(self.x1.weight)
+        #self.bn1 = nn.BatchNorm1d(64,eps = 2e-1)
         
-        self.bn1 = nn.BatchNorm1d(256, eps = 2e-1)
-        self.x2 =  nn.Linear(256, 256)
+        self.x2 =  nn.Linear(1024, 512)
         nn.init.xavier_normal_(self.x2.weight)
-        self.bn2 = nn.BatchNorm1d(256, eps = 2e-1)
-        #self.x3 =  nn.Linear(64,32)
-        #nn.init.xavier_normal_(self.x3.weight)
-        #comp head 1
-        
-        
+        #self.bn2 = nn.BatchNorm1d(512, eps = 2e-1)
+
         #heads
-        self.y1o = nn.Linear(256,gender_nodes)
-        nn.init.xavier_normal_(self.y1o.weight)#
-        self.y2o = nn.Linear(256,region_nodes)
-        nn.init.xavier_normal_(self.y2o.weight)
-        self.y3o = nn.Linear(256,fighting_nodes)
-        nn.init.xavier_normal_(self.y3o.weight)
-        self.y4o = nn.Linear(256,alignment_nodes)
-        nn.init.xavier_normal_(self.y4o.weight)
-        self.y5o = nn.Linear(256,color_nodes)
-        nn.init.xavier_normal_(self.y5o.weight)
+        self.y1 = nn.Linear(64, self.num_dataset)
+        nn.init.xavier_normal_(self.y1.weight)
+
+        self.y2 = nn.Linear(512 + 64, 5)
+        nn.init.xavier_normal_(self.y2.weight)
         
-        
-        self.d_out = nn.Dropout(dd)
+        self.d_out = nn.Dropout(dropout_ratio)
+
     def forward(self, x):
-       
-        x1 = self.resnet_model(x)
-        #x1 =  F.relu(self.x1(x1))
-        #x1 =  F.relu(self.x2(x1))
+
+        # prepare feature
+        # l2-normalize as indicated in the paper
+        common_feature = self.densenet_model(x)
+        common_feature = self.d_out(common_feature)
+        # add dropout 
+
+        dataset_feature =  F.relu(self.x1(common_feature)) # of 64
+        dataset_feature = F.normalize(dataset_feature, p=2, dim=0)
+
+        diseases_feature = F.relu(self.x2(common_feature)) # of 512
+        diseases_feature = F.normalize(common_feature, p=2, dim=0)
+
+        ## start hex projection
+        # prepare logits following hex paper and github
+
+        y_dataset = self.y1(dataset_feature) # this gonna be supervised   N x 64 -> N x 2
+
+        # in training, we concat dataset_feature, in testing, we pad zero
+        y_disease = self.y2(torch.cat([diseases_feature, dataset_feature], 1)) # N x 576 -> N x 5
+
+        y_padded = self.y2(torch.cat([torch.zeros_like(diseases_feature), dataset_feature], 1))
+
+        # to project
+        y_hex = y_disease -  torch.mm(torch.mm(torch.mm(y_padded, torch.inverse(torch.mm(y_padded.t, y_padded))), y_padded.t), y_disease)
         
-        x1 =  self.bn1(F.relu(self.x1(x1)))
-        x1 =  self.bn2(F.relu(self.x2(x1)))
-        #x = F.relu(self.x2(x))
-        #x1 = F.relu(self.x3(x))
-        
-        # heads
-        y1o = F.softmax(self.y1o(x1),dim=1)
-        y2o = F.softmax(self.y2o(x1),dim=1)
-        y3o = F.softmax(self.y3o(x1),dim=1)
-        y4o = F.softmax(self.y4o(x1),dim=1)
-        y5o = torch.sigmoid(self.y5o(x1)) #should be sigmoid
-        
-        #y1o = self.y1o(x1)
-        #y2o = self.y2o(x1)
-        #y3o = self.y3o(x1)
-        #y4o = self.y4o(x1)
-        #y5o = self.y5o(x1) #should be sigmoid
-        
-        return y1o, y2o, y3o, y4o, y5o
+        return y_hex, y_dataset
 
 
+'''
 def densenet121_hex(input_data):
     model_ft = models.densenet121(pretrained=True)
 
@@ -355,43 +354,12 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     model = models.densenet121(pretrained=True)
     del model.classifier
     model.classifier = nn.Identity()
-    
-
-    #model_1 = multi_output_model(model_ft, dropout_ratio=0.2)
-
-    #model_1 = model_1.to(device)
-
-    #pdb.set_trace()
-
-    ## the last layer of densenet121 is of feature dim 1024
-    # our target prediction is of size 5
-    # dropout 1024 -> 1024
-    # fc1 1024 -> 512 -> l2 normalize -> dropout -> l2 normalize  # 1024 -> 5, w, b
-    # fc2 1024 -> 128 -> l2 normalize -> dropout -> l2 normalize -> # 128 -> 2
-    # (128 + pad) -> 512, hex out -> 512
-    # classifier 
-
-    # 512 + 128 -> training
-
-    # 
-    # y_conv_loss = fc_{1}(1024 -> 512)
-    # y_conv_H = fc_{2}(1024 -> 128 -> 2) -> train 128 features
-    # [512, 128] -> predict
-    # [zeros, 128] -> hex out
-
-
-
-    num_ftrs = model.classifier.in_features
-    # add final layer with # outputs in same dimension of labels with sigmoid
-    # activation
-    model.classifier = nn.Sequential(
-        nn.Linear(num_ftrs, N_LABELS))#, nn.Sigmoid())
-
-    # put model on GPU
-    model = model.cuda()
+    model_new = multi_output_model(model, dropout_ratio=0.2)
+    model_new.cuda()
 
     # define criterion, optimizer for training
-    criterion = nn.CrossEntropyLoss()
+    criterion1 = nn.BCEWithLogitsLoss()
+    criterion2 = nn.CrossEntropyLoss()
     optimizer = optim.SGD(
         filter(
             lambda p: p.requires_grad,
@@ -402,11 +370,13 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     dataset_sizes = {x: len(transformed_datasets[x]) for x in ['train', 'val']}
 
     # train model
-    model, best_epoch = train_model(model, criterion, optimizer, LR, num_epochs=NUM_EPOCHS,
+    model, best_epoch = train_model(model_new, criterion1, criterion2, optimizer, LR, num_epochs=NUM_EPOCHS,
                                     dataloaders=dataloaders, dataset_sizes=dataset_sizes, weight_decay=WEIGHT_DECAY)
 
+
+    '''
     # get preds and AUCs on test fold
     preds, aucs = E.make_pred_multilabel(
         data_transforms, model, PATH_TO_IMAGES)
-
+    '''
     return preds, aucs

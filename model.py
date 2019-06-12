@@ -214,19 +214,19 @@ class multi_output_model(torch.nn.Module):
 
         #https://blog.csdn.net/Geek_of_CSDN/article/details/90179421
         
-        self.x1 =  nn.Linear(1024, 64)
+        self.x1 =  nn.Linear(1024, 32)
         nn.init.xavier_normal_(self.x1.weight)
         #self.bn1 = nn.BatchNorm1d(64,eps = 2e-1)
         
-        self.x2 =  nn.Linear(1024, 512)
-        nn.init.xavier_normal_(self.x2.weight)
+        #self.x2 =  nn.Linear(1024, 992)
+        #nn.init.xavier_normal_(self.x2.weight)
         #self.bn2 = nn.BatchNorm1d(512, eps = 2e-1)
 
         #heads
-        self.y1 = nn.Linear(64, self.num_dataset)
+        self.y1 = nn.Linear(32, self.num_dataset)
         nn.init.xavier_normal_(self.y1.weight)
 
-        self.y2 = nn.Linear(512 + 64, 5)
+        self.y2 = nn.Linear(1024, 5)
         nn.init.xavier_normal_(self.y2.weight)
         
         self.d_out = nn.Dropout(dropout_ratio)
@@ -240,24 +240,25 @@ class multi_output_model(torch.nn.Module):
         # add dropout 
 
         #pdb.set_trace()
-        dataset_feature =  F.relu(self.x1(common_feature)) # of 64
-        dataset_feature = F.normalize(dataset_feature, p=2, dim=0)
+        dataset_feature =  F.relu(self.x1(common_feature)) # of 32
+        #dataset_feature = F.normalize(dataset_feature, p=2, dim=0)
 
-        diseases_feature = F.relu(self.x2(common_feature)) # of 512
-        diseases_feature = F.normalize(diseases_feature, p=2, dim=0)
+        #diseases_feature = F.relu(self.x2(common_feature)) # of 512
+        #diseases_feature = F.normalize(diseases_feature, p=2, dim=0)
 
         ## start hex projection
         # prepare logits following hex paper and github
 
         y_dataset = self.y1(dataset_feature) # this gonna be supervised   N x 64 -> N x 2
-
+        '''
         if phase=='train':
             # in training, we concat dataset_feature, in testing, we pad zero
             y_disease = self.y2(torch.cat([diseases_feature, dataset_feature], 1)) # N x 576 -> N x 5
         else:
             y_disease = self.y2(torch.cat([diseases_feature, torch.zeros_like(dataset_feature)], 1)) # N x 576 -> N x 5
-
-        y_padded = self.y2(torch.cat([torch.zeros_like(diseases_feature), dataset_feature], 1))
+        '''
+        y_disease = self.y2(common_feature)
+        y_padded = self.y2(torch.cat([(torch.zeros([16, 1024-32]).cuda()), dataset_feature], 1))
 
         #pdb.set_trace()
 

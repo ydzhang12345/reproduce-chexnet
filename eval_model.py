@@ -47,18 +47,30 @@ def make_pred_multilabel(data_transforms, model, PATH_TO_IMAGES):
     acc = 0
     for i, data in enumerate(dataloader):
 
-        inputs, labels, _ = data
-        labels = labels.to(dtype=torch.int64)
-        labels = labels.reshape(-1)
-        inputs, labels = Variable(inputs.cuda()), Variable(labels.cuda())
+        inputs, label_disease, label_dataset, _ = data
+        label_dataset = label_dataset.to(dtype=torch.int64)
+        label_dataset = label_dataset.reshape(-1)
 
-        true_labels = labels.cpu().data.numpy()
-        batch_size = true_labels.shape
+        batch_size = inputs.shape[0]
+        inputs = Variable(inputs.cuda())
+        label_disease = Variable(label_disease.cuda()).float()
+        label_dataset = Variable(label_dataset.cuda())
 
-        outputs = model(inputs)
-        outputs = torch.nn.functional.softmax(outputs, dim=1)
-        probs = outputs.cpu().data.numpy()
-        acc += torch.sum(outputs.argmax(dim=1) == labels)
+
+        #inputs, labels, _ = data
+        #labels = labels.to(dtype=torch.int64)
+        #labels = labels.reshape(-1)
+        #inputs, labels = Variable(inputs.cuda()), Variable(labels.cuda())
+
+        #true_labels = labels.cpu().data.numpy()
+        #batch_size = true_labels.shape
+        label_disease = label_disease.cpu().data.numpy()
+        label_dataset = label_dataset.cpu().data.numpy()
+
+        disease_pred, dataset_pred = model(inputs)
+        #outputs = torch.nn.functional.softmax(outputs, dim=1)
+        probs = disease_pred.cpu().data.numpy()
+        acc += torch.sum(dataset_pred.argmax(dim=1) == labels)
         # get predictions and true values for each item in batch
         for j in range(0, batch_size[0]):
             thisrow = {}
@@ -68,13 +80,12 @@ def make_pred_multilabel(data_transforms, model, PATH_TO_IMAGES):
 
             # iterate over each entry in prediction vector; each corresponds to
             # individual label
-            if len(dataset.PRED_LABEL)==1:
-                thisrow["prob_" + "hospital0"] = probs[j,0]
-                truerow["hospital0"] = int(true_labels[j]==0)
-            else:
-                for k in range(len(dataset.PRED_LABEL)):
-                    thisrow["prob_" + dataset.PRED_LABEL[k]] = probs[j, k]
-                    truerow[dataset.PRED_LABEL[k]] = true_labels[j, k]
+            if len(dataset.PRED_LABEL_DATASET)==1:
+                thisrow["prob_" + "Dataset ID"] = dataset_pred[j, 0]
+                truerow["Dataset ID"] = int(label_dataset[j]==0)
+            for k in range(len(dataset.PRED_LABEL_DISEASE)):
+                thisrow["prob_" + dataset.PRED_LABEL_DISEASE[k]] = probs[j, k]
+                truerow[dataset.PRED_LABEL_DISEASE[k]] = label_disease[j, k]
 
             pred_df = pred_df.append(thisrow, ignore_index=True)
             true_df = true_df.append(truerow, ignore_index=True)
@@ -86,26 +97,14 @@ def make_pred_multilabel(data_transforms, model, PATH_TO_IMAGES):
     # calc AUCs
     for column in true_df:
         if column not in [
-                'hospital0']:
-            continue
-        '''
-        if column not in [
+            'Dataset ID'
             'Atelectasis',
             'Cardiomegaly',
-            'Effusion',
-            'Infiltration',
-            'Mass',
-            'Nodule',
-            'Pneumonia',
-            'Pneumothorax',
             'Consolidation',
             'Edema',
-            'Emphysema',
-            'Fibrosis',
-            'Pleural_Thickening',
-                'Hernia']:
+            'Effusion']:
                     continue
-        '''
+        
         actual = true_df[column]
         pred = pred_df["prob_" + column]
         thisrow = {}

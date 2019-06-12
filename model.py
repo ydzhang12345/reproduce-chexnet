@@ -107,48 +107,59 @@ def train_model(
                 model.train(True)
             else:
                 model.train(False)
+                model.eval()
 
-            running_loss = 0.0
-            running_acc = 0.0
+            running_loss1 = 0.0
+            running_loss2 = 0.0
+            running_acc2 = 0.0
             i = 0
             total_done = 0
 
-            pdb.set_trace()
             # iterate over all data in train/val dataloader:
             for data in dataloaders[phase]:
                 i += 1
-                inputs, labels, _ = data
-                labels = labels.to(dtype=torch.int64)
-                labels = labels.reshape(-1)
+                inputs, label_disease, label_dataset, _ = data
+                #label_disease = label_disease.to(dtype=torch.int64)
+                label_dataset = label_dataset.to(dtype=torch.int64)
+                #label_disease = label_disease.reshape(-1)
+                label_dataset = label_dataset.reshape(-1)
+                #labels = labels.reshape(-1)
                 batch_size = inputs.shape[0]
                 inputs = Variable(inputs.cuda())
-                labels = Variable(labels.cuda())
-                outputs = model(inputs)
+                label_disease = Variable(label_disease.cuda()).float()
+                label_dataset = Variable(label_dataset.cuda())
+                #labels = Variable(labels.cuda())
+                pred_disease, pred_dataset = model.forward(inputs, phase)
 
                 # calculate gradient and update parameters in train phase
                 optimizer.zero_grad()
-                loss = criterion(outputs, labels)
+                loss1 = criterion1(pred_disease, label_disease)
+                loss2 = criterion2(pred_dataset, label_dataset)
+                #print(loss1, "*****", loss2)
+                loss = loss1 + loss2
                 if phase == 'train':
                     loss.backward()
                     optimizer.step()
 
-                running_loss += loss.data * batch_size
-                running_acc += torch.sum(outputs.argmax(dim=1) == labels)
+                running_loss1 += loss1.data * batch_size
+                running_loss2 += loss2.data * batch_size
+                running_acc2 += torch.sum(pred_dataset.argmax(dim=1) == label_dataset)
+                #break
 
-            epoch_loss = running_loss / dataset_sizes[phase]
-            epoch_accuracy = running_acc.to(dtype=torch.float32) / dataset_sizes[phase]
+            epoch_loss1 = running_loss1 / dataset_sizes[phase]
+            epoch_loss2 = running_loss2 / dataset_sizes[phase]
+            epoch_accuracy = running_acc2.to(dtype=torch.float32) / dataset_sizes[phase]
             if phase == 'train':
-                last_train_loss = epoch_loss
+                last_train_loss = epoch_loss1
 
-            print(phase + ' epoch {}:loss {:.4f}, acc {:.4f} with data size {}'.format(
-                epoch, epoch_loss, epoch_accuracy, dataset_sizes[phase]))
+            print(phase + ' epoch {}:loss1 {:.4f}, loss2 {:.4f}, acc {:.4f} with data size {}'.format(
+                epoch, epoch_loss1, epoch_loss2, epoch_accuracy, dataset_sizes[phase]))
 
             # decay learning rate if no val loss improvement in this epoch
-
-            if phase == 'val' and epoch_loss > best_loss:
+            if phase == 'val' and epoch_loss1 > best_loss:
                 print("decay loss from " + str(LR) + " to " +
-                      str(LR / 10) + " as not seeing improvement in val loss")
-                LR = LR / 10
+                      str(LR / 2) + " as not seeing improvement in val loss")
+                LR = LR / 2
                 # create new optimizer with lower learning rate
                 optimizer = optim.SGD(
                     filter(
@@ -160,8 +171,8 @@ def train_model(
                 print("created new optimizer with LR " + str(LR))
 
             # checkpoint model if has best val loss yet
-            if phase == 'val' and epoch_loss < best_loss:
-                best_loss = epoch_loss
+            if phase == 'val' and epoch_loss1 < best_loss:
+                best_loss = epoch_loss1
                 best_epoch = epoch
                 checkpoint(model, best_loss, epoch, LR)
 
@@ -171,7 +182,7 @@ def train_model(
                     logwriter = csv.writer(logfile, delimiter=',')
                     if(epoch == 1):
                         logwriter.writerow(["epoch", "train_loss", "val_loss"])
-                    logwriter.writerow([epoch, last_train_loss, epoch_loss])
+                    logwriter.writerow([epoch, last_train_loss, epoch_loss1])
         
         total_done += batch_size
         if(total_done % (100 * batch_size) == 0):
@@ -180,6 +191,7 @@ def train_model(
         if ((epoch - best_epoch) >= 3):
             print("no improvement in 3 epochs, break")
             break
+        #break
 
     time_elapsed = time.time() - since
     print('Training complete in {:.0f}m {:.0f}s'.format(
@@ -219,7 +231,7 @@ class multi_output_model(torch.nn.Module):
         
         self.d_out = nn.Dropout(dropout_ratio)
 
-    def forward(self, x):
+    def forward(self, x, phase):
 
         # prepare feature
         # l2-normalize as indicated in the paper
@@ -227,24 +239,30 @@ class multi_output_model(torch.nn.Module):
         common_feature = self.d_out(common_feature)
         # add dropout 
 
+        #pdb.set_trace()
         dataset_feature =  F.relu(self.x1(common_feature)) # of 64
         dataset_feature = F.normalize(dataset_feature, p=2, dim=0)
 
         diseases_feature = F.relu(self.x2(common_feature)) # of 512
-        diseases_feature = F.normalize(common_feature, p=2, dim=0)
+        diseases_feature = F.normalize(diseases_feature, p=2, dim=0)
 
         ## start hex projection
         # prepare logits following hex paper and github
 
         y_dataset = self.y1(dataset_feature) # this gonna be supervised   N x 64 -> N x 2
 
-        # in training, we concat dataset_feature, in testing, we pad zero
-        y_disease = self.y2(torch.cat([diseases_feature, dataset_feature], 1)) # N x 576 -> N x 5
+        if phase=='train':
+            # in training, we concat dataset_feature, in testing, we pad zero
+            y_disease = self.y2(torch.cat([diseases_feature, dataset_feature], 1)) # N x 576 -> N x 5
+        else:
+            y_disease = self.y2(torch.cat([diseases_feature, torch.zeros_like(dataset_feature)], 1)) # N x 576 -> N x 5
 
         y_padded = self.y2(torch.cat([torch.zeros_like(diseases_feature), dataset_feature], 1))
 
+        #pdb.set_trace()
+
         # to project
-        y_hex = y_disease -  torch.mm(torch.mm(torch.mm(y_padded, torch.inverse(torch.mm(y_padded.t, y_padded))), y_padded.t), y_disease)
+        y_hex = y_disease -  torch.mm(torch.mm(torch.mm(y_padded, torch.inverse(torch.mm(y_padded.t(), y_padded))), y_padded.t()), y_disease)
         
         return y_hex, y_dataset
 

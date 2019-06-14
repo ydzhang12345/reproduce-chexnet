@@ -133,6 +133,7 @@ def train_model(
                 loss1 = criterion1(pred_hex, label_disease)
                 loss2 = criterion2(pred_dataset, label_dataset)
                 loss = loss1 + 0.1 * loss2
+                #print(loss1, '***', loss2)
                 if phase == 'train':
                     loss.backward()
                     optimizer.step()
@@ -224,7 +225,7 @@ class simpleCNN(torch.nn.Module):
                 kernel_size=5,
                 stride=1,
                 padding=2),
-            nn.BatchNorm2d(16)
+            nn.BatchNorm2d(16),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2),
             ) # 56
@@ -234,7 +235,7 @@ class simpleCNN(torch.nn.Module):
                 kernel_size=3,
                 stride=1,
                 padding=2),
-            nn.BatchNorm2d(32)
+            nn.BatchNorm2d(32),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2),
             ) # 28
@@ -244,7 +245,7 @@ class simpleCNN(torch.nn.Module):
                 kernel_size=3,
                 stride=1,
                 padding=2),
-            nn.BatchNorm2d(32)
+            nn.BatchNorm2d(32),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2),
             ) # 14
@@ -254,7 +255,7 @@ class simpleCNN(torch.nn.Module):
                 kernel_size=3,
                 stride=1,
                 padding=2),
-            nn.BatchNorm2d(32)
+            nn.BatchNorm2d(32),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2),
             ) # 7
@@ -292,7 +293,7 @@ class multi_output_model(torch.nn.Module):
     def forward(self, x, phase):
 
         # prepare feature
-        disease_feature = self.densenet_model(x)
+        diseases_feature = self.densenet_model(x)
         dataset_feature = self.simpleCNN(x)
 
         # l2-normalize as indicated in the paper
@@ -328,7 +329,7 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
 
     """
     NUM_EPOCHS = 100
-    BATCH_SIZE = 16
+    BATCH_SIZE = 32
 
     '''
     try:
@@ -397,7 +398,7 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     del model.classifier
     model.classifier = nn.Identity()
     model_new = multi_output_model(model)
-    
+    model_new.cuda()    
     '''
     path_images = '/home/lovebb/Documents/MIBLab/chest-Xray-dataset'
     path_model = '/home/lovebb/Documents/MIBLab/undo_bias/reproduce-chexnet/results/checkpoint'
@@ -418,7 +419,7 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     optimizer = optim.SGD(
         filter(
             lambda p: p.requires_grad,
-            model.parameters()),
+            model_new.parameters()),
         lr=LR,
         momentum=0.9,
         weight_decay=WEIGHT_DECAY)

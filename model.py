@@ -104,6 +104,7 @@ def train_model(
         # val; necessary to get correct predictions given batchnorm
         for phase in ['train', 'val']:
             if phase == 'train':
+                continue
                 model.train(True)
             else:
                 model.train(False)
@@ -135,8 +136,9 @@ def train_model(
                 optimizer.zero_grad()
                 loss1 = criterion1(pred_disease, label_disease)
                 loss2 = criterion2(pred_dataset, label_dataset)
+                pdb.set_trace()
                 #print(loss1, "*****", loss2)
-                loss = loss1 + loss2
+                loss = loss1 + 0.2 * loss2
                 if phase == 'train':
                     loss.backward()
                     optimizer.step()
@@ -236,7 +238,7 @@ class multi_output_model(torch.nn.Module):
         # prepare feature
         # l2-normalize as indicated in the paper
         common_feature = self.densenet_model(x)
-        common_feature = self.d_out(common_feature)
+        #common_feature = self.d_out(common_feature)
         # add dropout 
 
         #pdb.set_trace()
@@ -258,13 +260,10 @@ class multi_output_model(torch.nn.Module):
             y_disease = self.y2(torch.cat([diseases_feature, torch.zeros_like(dataset_feature)], 1)) # N x 576 -> N x 5
         '''
         y_disease = self.y2(common_feature)
-        y_padded = self.y2(torch.cat([(torch.zeros([16, 1024-32]).cuda()), dataset_feature], 1))
-
-        #pdb.set_trace()
+        y_padded = self.y2(torch.cat([(torch.zeros([dataset_feature.shape[0], 1024-32]).cuda()), dataset_feature], 1))
 
         # to project
         y_hex = y_disease -  torch.mm(torch.mm(torch.mm(y_padded, torch.inverse(torch.mm(y_padded.t(), y_padded))), y_padded.t()), y_disease)
-        
         return y_hex, y_dataset
 
 
@@ -310,11 +309,13 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     NUM_EPOCHS = 100
     BATCH_SIZE = 16
 
+    '''
     try:
         rmtree('results/')
     except BaseException:
         pass  # directory doesn't yet exist, no need to clear it
     os.makedirs("results/")
+    '''
 
     # use imagenet mean,std for normalization
     mean = [0.485, 0.456, 0.406]
@@ -370,11 +371,25 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     if not use_gpu:
         raise ValueError("Error, requires GPU")
 
+    
     model = models.densenet121(pretrained=True)
     del model.classifier
     model.classifier = nn.Identity()
     model_new = multi_output_model(model, dropout_ratio=0.2)
+    
+    '''
+    path_images = '/home/lovebb/Documents/MIBLab/chest-Xray-dataset'
+    path_model = '/home/lovebb/Documents/MIBLab/undo_bias/reproduce-chexnet/results/checkpoint'
+
+    checkpoint = torch.load(path_model, map_location=lambda storage, loc: storage)
+    model_new = checkpoint['model']
+    del checkpoint
     model_new.cuda()
+    for name, param in model_new.named_parameters():
+        if param.requires_grad:
+            print(name, ' ')
+    pdb.set_trace()
+    '''
 
     # define criterion, optimizer for training
     criterion1 = nn.BCEWithLogitsLoss()

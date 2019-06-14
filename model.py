@@ -104,55 +104,57 @@ def train_model(
         # val; necessary to get correct predictions given batchnorm
         for phase in ['train', 'val']:
             if phase == 'train':
-                continue
                 model.train(True)
             else:
                 model.train(False)
-                model.eval()
 
             running_loss1 = 0.0
             running_loss2 = 0.0
             running_acc2 = 0.0
             i = 0
+            total_acc = 0.0
+            total_acc_raw = 0.0
             total_done = 0
 
             # iterate over all data in train/val dataloader:
             for data in dataloaders[phase]:
                 i += 1
                 inputs, label_disease, label_dataset, _ = data
-                #label_disease = label_disease.to(dtype=torch.int64)
                 label_dataset = label_dataset.to(dtype=torch.int64)
-                #label_disease = label_disease.reshape(-1)
                 label_dataset = label_dataset.reshape(-1)
-                #labels = labels.reshape(-1)
                 batch_size = inputs.shape[0]
                 inputs = Variable(inputs.cuda())
                 label_disease = Variable(label_disease.cuda()).float()
                 label_dataset = Variable(label_dataset.cuda())
-                #labels = Variable(labels.cuda())
-                pred_disease, pred_dataset = model.forward(inputs, phase)
+                pred_hex, pred_dataset, pred_disease = model.forward(inputs, phase)
 
                 # calculate gradient and update parameters in train phase
                 optimizer.zero_grad()
-                loss1 = criterion1(pred_disease, label_disease)
+                loss1 = criterion1(pred_hex, label_disease)
                 loss2 = criterion2(pred_dataset, label_dataset)
-                pdb.set_trace()
-                #print(loss1, "*****", loss2)
-                loss = loss1 + 0.2 * loss2
+                loss = loss1 + 0.1 * loss2
                 if phase == 'train':
                     loss.backward()
                     optimizer.step()
+                else:
+                    probs = (torch.sigmoid(pred_disease)).cpu().data.numpy()
+                    label_disease = label_disease.cpu().data.numpy()
+                    total_acc += np.sum(np.uint8(probs>0.5)==label_disease)
+                    probs_raw = (torch.sigmoid(pred_raw)).cpu().data.numpy()
+                    total_acc_raw += np.sum(np.uint8(probs_raw>0.5)==label_disease)
+
 
                 running_loss1 += loss1.data * batch_size
                 running_loss2 += loss2.data * batch_size
                 running_acc2 += torch.sum(pred_dataset.argmax(dim=1) == label_dataset)
-                #break
-
+                
             epoch_loss1 = running_loss1 / dataset_sizes[phase]
             epoch_loss2 = running_loss2 / dataset_sizes[phase]
             epoch_accuracy = running_acc2.to(dtype=torch.float32) / dataset_sizes[phase]
             if phase == 'train':
                 last_train_loss = epoch_loss1
+            else:
+                print("total_acc: ", total_acc, "total_acc_raw: ", total_acc_raw)
 
             print(phase + ' epoch {}:loss1 {:.4f}, loss2 {:.4f}, acc {:.4f} with data size {}'.format(
                 epoch, epoch_loss1, epoch_loss2, epoch_accuracy, dataset_sizes[phase]))
@@ -160,8 +162,8 @@ def train_model(
             # decay learning rate if no val loss improvement in this epoch
             if phase == 'val' and epoch_loss1 > best_loss:
                 print("decay loss from " + str(LR) + " to " +
-                      str(LR / 2) + " as not seeing improvement in val loss")
-                LR = LR / 2
+                      str(LR / 10) + " as not seeing improvement in val loss")
+                LR = LR / 10
                 # create new optimizer with lower learning rate
                 optimizer = optim.SGD(
                     filter(
@@ -193,7 +195,6 @@ def train_model(
         if ((epoch - best_epoch) >= 3):
             print("no improvement in 3 epochs, break")
             break
-        #break
 
     time_elapsed = time.time() - since
     print('Training complete in {:.0f}m {:.0f}s'.format(
@@ -205,90 +206,110 @@ def train_model(
 
     return model, best_epoch
 
+class simpleCNN(torch.nn.Module):
+    def __init__(self):
+        super(simpleCNN, self).__init__()
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(in_channels=3,
+                out_channels=16,
+                kernel_size=5,
+                stride=1,
+                padding=2),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2),
+            ) # 112
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(in_channels=16,
+                out_channels=16,
+                kernel_size=5,
+                stride=1,
+                padding=2),
+            nn.BatchNorm2d(16)
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2),
+            ) # 56
+        self.conv3 = nn.Sequential(
+            nn.Conv2d(in_channels=16,
+                out_channels=32,
+                kernel_size=3,
+                stride=1,
+                padding=2),
+            nn.BatchNorm2d(32)
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2),
+            ) # 28
+        self.conv4 = nn.Sequential(
+            nn.Conv2d(in_channels=32,
+                out_channels=32,
+                kernel_size=3,
+                stride=1,
+                padding=2),
+            nn.BatchNorm2d(32)
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2),
+            ) # 14
+        self.conv5 = nn.Sequential(
+            nn.Conv2d(in_channels=32,
+                out_channels=32,
+                kernel_size=3,
+                stride=1,
+                padding=2),
+            nn.BatchNorm2d(32)
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2),
+            ) # 7
+        self.global_pool = nn.AvgPool2d(7, 7)
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
+        x = self.conv4(x)
+        x = self.conv5(x)
+        x = self.global_pool(x)
+        x = x.view(x.size(0), -1)
+        return x
+
 
 
 class multi_output_model(torch.nn.Module):
-    def __init__(self, model_core, dropout_ratio):
+    def __init__(self, model_core):
         super(multi_output_model, self).__init__()
         
         self.densenet_model = model_core
+        self.simpleCNN = simpleCNN()
         self.num_dataset = 2
 
-        #https://blog.csdn.net/Geek_of_CSDN/article/details/90179421
-        
-        self.x1 =  nn.Linear(1024, 32)
-        nn.init.xavier_normal_(self.x1.weight)
-        #self.bn1 = nn.BatchNorm1d(64,eps = 2e-1)
-        
-        #self.x2 =  nn.Linear(1024, 992)
-        #nn.init.xavier_normal_(self.x2.weight)
-        #self.bn2 = nn.BatchNorm1d(512, eps = 2e-1)
-
         #heads
+
         self.y1 = nn.Linear(32, self.num_dataset)
         nn.init.xavier_normal_(self.y1.weight)
 
-        self.y2 = nn.Linear(1024, 5)
+        self.y2 = nn.Linear(1024 + 32, 5)
         nn.init.xavier_normal_(self.y2.weight)
         
-        self.d_out = nn.Dropout(dropout_ratio)
 
     def forward(self, x, phase):
 
         # prepare feature
+        disease_feature = self.densenet_model(x)
+        dataset_feature = self.simpleCNN(x)
+
         # l2-normalize as indicated in the paper
-        common_feature = self.densenet_model(x)
-        #common_feature = self.d_out(common_feature)
-        # add dropout 
-
-        #pdb.set_trace()
-        dataset_feature =  F.relu(self.x1(common_feature)) # of 32
-        #dataset_feature = F.normalize(dataset_feature, p=2, dim=0)
-
-        #diseases_feature = F.relu(self.x2(common_feature)) # of 512
-        #diseases_feature = F.normalize(diseases_feature, p=2, dim=0)
+        dataset_feature = F.normalize(dataset_feature, p=2, dim=0)
+        diseases_feature = F.normalize(diseases_feature, p=2, dim=0)
 
         ## start hex projection
         # prepare logits following hex paper and github
-
         y_dataset = self.y1(dataset_feature) # this gonna be supervised   N x 64 -> N x 2
-        '''
-        if phase=='train':
-            # in training, we concat dataset_feature, in testing, we pad zero
-            y_disease = self.y2(torch.cat([diseases_feature, dataset_feature], 1)) # N x 576 -> N x 5
-        else:
-            y_disease = self.y2(torch.cat([diseases_feature, torch.zeros_like(dataset_feature)], 1)) # N x 576 -> N x 5
-        '''
-        y_disease = self.y2(common_feature)
-        y_padded = self.y2(torch.cat([(torch.zeros([dataset_feature.shape[0], 1024-32]).cuda()), dataset_feature], 1))
+
+        y_disease = self.y2(torch.cat([diseases_feature, dataset_feature], 1))
+        y_padded = self.y2(torch.cat([(torch.zeros([dataset_feature.shape[0], 1024]).cuda()), dataset_feature], 1))
+        y_all = self.y2(torch.cat([diseases_feature, dataset_feature], 1))
 
         # to project
-        y_hex = y_disease -  torch.mm(torch.mm(torch.mm(y_padded, torch.inverse(torch.mm(y_padded.t(), y_padded))), y_padded.t()), y_disease)
-        return y_hex, y_dataset
-
-
-'''
-def densenet121_hex(input_data):
-    model_ft = models.densenet121(pretrained=True)
-
-
-    #num_ftrs = model.classifier.in_features
-    # add final layer with # outputs in same dimension of labels with sigmoid
-    # activation
-    #model.classifier = nn.Sequential(
-    #    nn.Linear(num_ftrs, N_LABELS))#, nn.Sigmoid())
-
-
-    #num_ftrs = model_ft.fc.in_features
-    #model_ft.fc = nn.Linear(num_ftrs, 512)
-
-    dd = .1
-    model_1 = multi_output_model(model_ft,dd)
-    model_1 = model_1.to(device)
-    print(model_1)
-    print(model_1.parameters())    
-    criterion = [nn.CrossEntropyLoss(),nn.CrossEntropyLoss(),nn.CrossEntropyLoss(),nn.CrossEntropyLoss(),nn.BCELoss()]
-'''
+        y_hex = y_all -  torch.mm(torch.mm(torch.mm(y_padded, torch.inverse(torch.mm(y_padded.t(), y_padded))), y_padded.t()), y_all)
+        return y_hex, y_dataset, y_disease
 
 
 
@@ -375,7 +396,7 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     model = models.densenet121(pretrained=True)
     del model.classifier
     model.classifier = nn.Identity()
-    model_new = multi_output_model(model, dropout_ratio=0.2)
+    model_new = multi_output_model(model)
     
     '''
     path_images = '/home/lovebb/Documents/MIBLab/chest-Xray-dataset'

@@ -7,6 +7,6 @@ import model as M
 # NIH images
 PATH_TO_IMAGES = '/home/lovebb/Documents/MIBLab/chest-Xray-dataset'
 WEIGHT_DECAY = 1e-4
-LEARNING_RATE = 0.01
+LEARNING_RATE = 0.0003
 preds, aucs = M.train_cnn(PATH_TO_IMAGES, LEARNING_RATE, WEIGHT_DECAY)
 

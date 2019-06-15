@@ -340,8 +340,7 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
 
     """
     NUM_EPOCHS = 100
-    BATCH_SIZE = 32
-
+    BATCH_SIZE = 36
     '''
     try:
         rmtree('results/')
@@ -404,25 +403,21 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     if not use_gpu:
         raise ValueError("Error, requires GPU")
 
-    
+    '''
     model = models.densenet121(pretrained=True)
     del model.classifier
     model.classifier = nn.Identity()
     model_new = multi_output_model(model)
-    model_new.cuda()    
-    '''
-    path_images = '/home/lovebb/Documents/MIBLab/chest-Xray-dataset'
-    path_model = '/home/lovebb/Documents/MIBLab/undo_bias/reproduce-chexnet/results/checkpoint'
+    model_new.cuda()   
+    ''' 
+
+    path_model = '/home/lovebb/Documents/MIBLab/undo_bias/reproduce-chexnet/results/checkpoint1'
 
     checkpoint = torch.load(path_model, map_location=lambda storage, loc: storage)
     model_new = checkpoint['model']
     del checkpoint
     model_new.cuda()
-    for name, param in model_new.named_parameters():
-        if param.requires_grad:
-            print(name, ' ')
-    pdb.set_trace()
-    '''
+    
 
     # define criterion, optimizer for training
     criterion1 = nn.BCEWithLogitsLoss()
@@ -441,9 +436,9 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
                                     dataloaders=dataloaders, dataset_sizes=dataset_sizes, weight_decay=WEIGHT_DECAY)
 
 
-    '''
+    
     # get preds and AUCs on test fold
     preds, aucs = E.make_pred_multilabel(
         data_transforms, model, PATH_TO_IMAGES)
-    '''
+    
     return preds, aucs

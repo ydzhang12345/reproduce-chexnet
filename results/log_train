@@ -1,0 +1,14 @@
+epoch,train_loss,val_loss
+1,"tensor(0.4228, device='cuda:0')","tensor(0.3387, device='cuda:0')"
+2,"tensor(0.3481, device='cuda:0')","tensor(0.3305, device='cuda:0')"
+3,"tensor(0.3666, device='cuda:0')","tensor(0.3281, device='cuda:0')"
+4,"tensor(0.3341, device='cuda:0')","tensor(0.3301, device='cuda:0')"
+5,"tensor(0.3175, device='cuda:0')","tensor(0.3208, device='cuda:0')"
+6,"tensor(0.3134, device='cuda:0')","tensor(0.3246, device='cuda:0')"
+7,"tensor(0.3103, device='cuda:0')","tensor(0.3229, device='cuda:0')"
+8,"tensor(0.3092, device='cuda:0')","tensor(0.3222, device='cuda:0')"
+epoch,train_loss,val_loss
+1,"tensor(0.3114, device='cuda:0')","tensor(0.3211, device='cuda:0')"
+2,"tensor(0.3105, device='cuda:0')","tensor(0.3205, device='cuda:0')"
+3,"tensor(0.3089, device='cuda:0')","tensor(0.3214, device='cuda:0')"
+4,"tensor(0.3083, device='cuda:0')","tensor(0.3213, device='cuda:0')"

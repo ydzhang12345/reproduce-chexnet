@@ -18,19 +18,21 @@ import numpy as np
 import scipy as sp
 import pandas as pd
 
+
 # import other modules
 from copy import deepcopy
 import cxr_dataset as CXR
 import eval_model as E
+import pdb
 
 
-path_images = '/home/lovebb/Documents/MIBLab/chest-Xray-dataset'
-path_model = '/home/lovebb/Documents/MIBLab/reproduce-chexnet/results/checkpoint'
+path_images = '/home/ben/Desktop/MIBLab/'
+path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/checkpoint10'
 
 checkpoint = torch.load(path_model, map_location=lambda storage, loc: storage)
 model = checkpoint['model']
 del checkpoint
-model.cuda()
+#model.cuda()
 
 
 # build dataloader on test
@@ -40,11 +42,11 @@ std = [0.229, 0.224, 0.225]
 # define torchvision transforms
 data_transforms = {
     'train': transforms.Compose([
-        transforms.RandomHorizontalFlip(),
-        transforms.Scale(224),
+        transforms.Scale(256),
+
         # because scale doesn't always give 224 x 224, this ensures 224 x
         # 224
-        transforms.CenterCrop(224),
+        transforms.RandomCrop(224),
         transforms.ToTensor(),
         transforms.Normalize(mean, std)
     ]),

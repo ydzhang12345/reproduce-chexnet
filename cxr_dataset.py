@@ -19,7 +19,7 @@ class CXRDataset(Dataset):
 
         self.transform = transform
         self.path_to_images = path_to_images
-        self.df = pd.read_csv("labels.csv")
+        self.df = pd.read_csv("mimic_labels.csv")
         self.df = self.df[self.df['fold'] == fold]
 
         if(starter_images):
@@ -72,6 +72,7 @@ class CXRDataset(Dataset):
             if(self.df[self.PRED_LABEL_DATASET[i].strip()].iloc[idx].astype('int') > 0):
                 label_dataset[i] = self.df[self.PRED_LABEL_DATASET[i].strip()
                                    ].iloc[idx].astype('int')
+                label_dataset[i] = 1
 
         for i in range(0, len(self.PRED_LABEL_DISEASE)):
              # can leave zero if zero, else make one

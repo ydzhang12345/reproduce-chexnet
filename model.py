@@ -58,7 +58,7 @@ def checkpoint(model, best_loss, epoch, LR):
         'LR': LR
     }
 
-    torch.save(state, 'results/checkpoint')
+    torch.save(state, 'results/checkpoint' + str(epoch))
 
 
 def train_model(
@@ -104,6 +104,7 @@ def train_model(
         # val; necessary to get correct predictions given batchnorm
         for phase in ['train', 'val']:
             if phase == 'train':
+                #continue
                 model.train(True)
             else:
                 model.train(False)
@@ -113,6 +114,8 @@ def train_model(
             running_loss2 = 0.0
             running_acc2 = 0.0
             i = 0
+            total_acc = 0.0
+            total_acc_raw = 0.0
             total_done = 0
 
             # iterate over all data in train/val dataloader:
@@ -129,28 +132,52 @@ def train_model(
                 label_disease = Variable(label_disease.cuda()).float()
                 label_dataset = Variable(label_dataset.cuda())
                 #labels = Variable(labels.cuda())
-                pred_disease, pred_dataset = model.forward(inputs, phase)
 
-                # calculate gradient and update parameters in train phase
-                optimizer.zero_grad()
-                loss1 = criterion1(pred_disease, label_disease)
-                loss2 = criterion2(pred_dataset, label_dataset)
-                #print(loss1, "*****", loss2)
-                loss = loss1 + loss2
+                if phase=='train':
+                    pred_disease, pred_dataset, pred_raw = model.forward(inputs, phase)
+                else:
+                    with torch.no_grad():
+                        pred_disease, pred_dataset, pred_raw = model.forward(inputs, phase)
+
+
                 if phase == 'train':
+                    # calculate gradient and update parameters in train phase
+                    optimizer.zero_grad()
+                    loss1 = criterion1(pred_disease, label_disease)
+                    loss2 = criterion2(pred_dataset, label_dataset)
+                    #print(loss1, "*****", loss2)
+                    loss = loss1 + loss2
                     loss.backward()
                     optimizer.step()
+                else:
+                    optimizer.zero_grad()
+                    loss1 = criterion1(pred_raw, label_disease)
+                    loss2 = criterion2(pred_dataset, label_dataset)
+                    #print(loss1, "*****", loss2)
+                    loss = loss1 + loss2
+
+                    #probs = (torch.sigmoid(pred_disease)).cpu().data.numpy()
+                    probs = (torch.sigmoid(pred_raw)).cpu().data.numpy()
+                    label_disease = label_disease.cpu().data.numpy()
+                    total_acc += np.sum(np.uint8(probs>0.5)==label_disease)
+
+                    probs_raw = (torch.sigmoid(pred_raw)).cpu().data.numpy()
+                    total_acc_raw += np.sum(np.uint8(probs_raw>0.5)==label_disease)
+
 
                 running_loss1 += loss1.data * batch_size
                 running_loss2 += loss2.data * batch_size
                 running_acc2 += torch.sum(pred_dataset.argmax(dim=1) == label_dataset)
-                #break
+                #if i > 100:
+                #    break
 
             epoch_loss1 = running_loss1 / dataset_sizes[phase]
             epoch_loss2 = running_loss2 / dataset_sizes[phase]
             epoch_accuracy = running_acc2.to(dtype=torch.float32) / dataset_sizes[phase]
             if phase == 'train':
                 last_train_loss = epoch_loss1
+            else:
+                print("total_acc: ", total_acc, "total_acc_raw: ", total_acc_raw)
 
             print(phase + ' epoch {}:loss1 {:.4f}, loss2 {:.4f}, acc {:.4f} with data size {}'.format(
                 epoch, epoch_loss1, epoch_loss2, epoch_accuracy, dataset_sizes[phase]))
@@ -158,8 +185,8 @@ def train_model(
             # decay learning rate if no val loss improvement in this epoch
             if phase == 'val' and epoch_loss1 > best_loss:
                 print("decay loss from " + str(LR) + " to " +
-                      str(LR / 2) + " as not seeing improvement in val loss")
-                LR = LR / 2
+                      str(LR / 10) + " as not seeing improvement in val loss")
+                LR = LR / 10
                 # create new optimizer with lower learning rate
                 optimizer = optim.SGD(
                     filter(
@@ -198,7 +225,7 @@ def train_model(
         time_elapsed // 60, time_elapsed % 60))
 
     # load best model weights to return
-    checkpoint_best = torch.load('results/checkpoint')
+    checkpoint_best = torch.load('results/checkpoint' + str(best_epoch))
     model = checkpoint_best['model']
 
     return model, best_epoch
@@ -214,19 +241,19 @@ class multi_output_model(torch.nn.Module):
 
         #https://blog.csdn.net/Geek_of_CSDN/article/details/90179421
         
-        self.x1 =  nn.Linear(1024, 64)
+        self.x1 =  nn.Linear(1024, 32)
         nn.init.xavier_normal_(self.x1.weight)
         #self.bn1 = nn.BatchNorm1d(64,eps = 2e-1)
         
-        self.x2 =  nn.Linear(1024, 512)
+        self.x2 =  nn.Linear(1024, 1024)
         nn.init.xavier_normal_(self.x2.weight)
         #self.bn2 = nn.BatchNorm1d(512, eps = 2e-1)
 
         #heads
-        self.y1 = nn.Linear(64, self.num_dataset)
+        self.y1 = nn.Linear(32, self.num_dataset)
         nn.init.xavier_normal_(self.y1.weight)
 
-        self.y2 = nn.Linear(512 + 64, 5)
+        self.y2 = nn.Linear(1024 + 32, 5)
         nn.init.xavier_normal_(self.y2.weight)
         
         self.d_out = nn.Dropout(dropout_ratio)
@@ -240,31 +267,37 @@ class multi_output_model(torch.nn.Module):
         # add dropout 
 
         #pdb.set_trace()
-        dataset_feature =  F.relu(self.x1(common_feature)) # of 64
+        dataset_feature =  F.relu(self.x1(common_feature)) # of 32
         dataset_feature = F.normalize(dataset_feature, p=2, dim=0)
 
-        diseases_feature = F.relu(self.x2(common_feature)) # of 512
+        diseases_feature = F.relu(self.x2(common_feature)) # of 1024
         diseases_feature = F.normalize(diseases_feature, p=2, dim=0)
 
         ## start hex projection
         # prepare logits following hex paper and github
 
-        y_dataset = self.y1(dataset_feature) # this gonna be supervised   N x 64 -> N x 2
+        y_dataset = self.y1(dataset_feature) # this gonna be supervised   N x 32 -> N x 2
 
+        y_disease = self.y2(torch.cat([diseases_feature, dataset_feature], 1)) # N x 1056 -> N x 5
+
+        '''
         if phase=='train':
             # in training, we concat dataset_feature, in testing, we pad zero
             y_disease = self.y2(torch.cat([diseases_feature, dataset_feature], 1)) # N x 576 -> N x 5
         else:
             y_disease = self.y2(torch.cat([diseases_feature, torch.zeros_like(dataset_feature)], 1)) # N x 576 -> N x 5
 
+        '''
+
         y_padded = self.y2(torch.cat([torch.zeros_like(diseases_feature), dataset_feature], 1))
+        y_raw = self.y2(torch.cat([diseases_feature, torch.zeros_like(dataset_feature)], 1))
 
         #pdb.set_trace()
 
         # to project
         y_hex = y_disease -  torch.mm(torch.mm(torch.mm(y_padded, torch.inverse(torch.mm(y_padded.t(), y_padded))), y_padded.t()), y_disease)
         
-        return y_hex, y_dataset
+        return y_hex, y_dataset, y_raw
 
 
 '''
@@ -290,8 +323,6 @@ def densenet121_hex(input_data):
     criterion = [nn.CrossEntropyLoss(),nn.CrossEntropyLoss(),nn.CrossEntropyLoss(),nn.CrossEntropyLoss(),nn.BCELoss()]
 '''
 
-
-
 def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     """
     Train torchvision model to NIH data given high level hyperparameters.
@@ -307,22 +338,17 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
 
     """
     NUM_EPOCHS = 100
-    BATCH_SIZE = 16
+    BATCH_SIZE = 50
 
-    try:
-        rmtree('results/')
-    except BaseException:
-        pass  # directory doesn't yet exist, no need to clear it
-    os.makedirs("results/")
+    if not os.path.exists("results/"):
+        os.makedirs("results/")
 
     # use imagenet mean,std for normalization
     mean = [0.485, 0.456, 0.406]
     std = [0.229, 0.224, 0.225]
 
-    N_LABELS = 2  # we are predicting 14 labels
-
     # load labels
-    df = pd.read_csv("labels.csv", index_col=0)
+    df = pd.read_csv("mimic_labels.csv", index_col=0)
 
     # define torchvision transforms
     data_transforms = {
@@ -352,7 +378,6 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
         path_to_images=PATH_TO_IMAGES,
         fold='val',
         transform=data_transforms['val'])
-
     dataloaders = {}
     dataloaders['train'] = torch.utils.data.DataLoader(
         transformed_datasets['train'],
@@ -365,15 +390,43 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
         shuffle=True,
         num_workers=8)
 
+
     # please do not attempt to train without GPU as will take excessively long
     if not use_gpu:
         raise ValueError("Error, requires GPU")
-
+    
+    '''
     model = models.densenet121(pretrained=True)
     del model.classifier
     model.classifier = nn.Identity()
     model_new = multi_output_model(model, dropout_ratio=0.2)
     model_new.cuda()
+    '''
+    
+
+    
+    path_images = '/home/ben/Desktop/MIBLab/'
+    path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/checkpoint4'
+    checkpoint = torch.load(path_model, map_location=lambda storage, loc: storage)
+    model_new = checkpoint['model']
+    model_new.cuda()
+    del checkpoint
+    
+    torch.backends.cudnn.enabled = False
+    preds, aucs = E.make_pred_multilabel(
+    data_transforms, model_new, PATH_TO_IMAGES)
+    pdb.set_trace()
+    
+
+    '''
+    path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/checkpoint4'
+    checkpoint = torch.load(path_model, map_location=lambda storage, loc: storage)
+    model_new = checkpoint['model']
+    model_new.cuda()
+    del checkpoint
+    '''
+    
+    
 
     # define criterion, optimizer for training
     criterion1 = nn.BCEWithLogitsLoss()
@@ -381,7 +434,7 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     optimizer = optim.SGD(
         filter(
             lambda p: p.requires_grad,
-            model.parameters()),
+            model_new.parameters()),
         lr=LR,
         momentum=0.9,
         weight_decay=WEIGHT_DECAY)
@@ -392,9 +445,9 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
                                     dataloaders=dataloaders, dataset_sizes=dataset_sizes, weight_decay=WEIGHT_DECAY)
 
 
-    '''
+    
     # get preds and AUCs on test fold
     preds, aucs = E.make_pred_multilabel(
         data_transforms, model, PATH_TO_IMAGES)
-    '''
+    
     return preds, aucs

@@ -107,6 +107,7 @@ def train_model(
                 model.train(True)
             else:
                 model.train(False)
+                model.eval()
 
             running_loss1 = 0.0
             running_loss2 = 0.0
@@ -126,29 +127,39 @@ def train_model(
                 inputs = Variable(inputs.cuda())
                 label_disease = Variable(label_disease.cuda()).float()
                 label_dataset = Variable(label_dataset.cuda())
-                pred_hex, pred_dataset, pred_disease = model.forward(inputs, phase)
 
-                # calculate gradient and update parameters in train phase
-                optimizer.zero_grad()
-                loss1 = criterion1(pred_hex, label_disease)
-                loss2 = criterion2(pred_dataset, label_dataset)
-                loss = loss1 + 0.1 * loss2
-                #print(loss1, '***', loss2)
-                if phase == 'train':
+                if phase=='train':
+                    pred_hex, pred_dataset, pred_disease = model.forward(inputs, phase)
+                else:
+                    with torch.no_grad():
+                        pred_hex, pred_dataset, pred_disease = model.forward(inputs, phase)
+
+                
+                if phase=='train':
+
+                    # calculate gradient and update parameters in train phase
+                    optimizer.zero_grad()
+                    loss1 = criterion1(pred_hex, label_disease)
+                    loss2 = criterion2(pred_dataset, label_dataset)
+                    loss = loss1 + (1 / (epoch + 1)) * loss2
+                    #print(loss1, '***', loss2):
                     loss.backward()
                     optimizer.step()
                 else:
+                    optimizer.zero_grad()
+                    loss1 = criterion1(pred_disease, label_disease)
+                    loss2 = criterion2(pred_dataset, label_dataset)
+                    loss = loss1 + (1 / (epoch + 1)) * loss2
                     probs = (torch.sigmoid(pred_disease)).cpu().data.numpy()
                     label_disease = label_disease.cpu().data.numpy()
                     total_acc += np.sum(np.uint8(probs>0.5)==label_disease)
-                    probs_raw = (torch.sigmoid(pred_raw)).cpu().data.numpy()
+                    probs_raw = (torch.sigmoid(pred_disease)).cpu().data.numpy()
                     total_acc_raw += np.sum(np.uint8(probs_raw>0.5)==label_disease)
 
 
                 running_loss1 += loss1.data * batch_size
                 running_loss2 += loss2.data * batch_size
                 running_acc2 += torch.sum(pred_dataset.argmax(dim=1) == label_dataset)
-                
             epoch_loss1 = running_loss1 / dataset_sizes[phase]
             epoch_loss2 = running_loss2 / dataset_sizes[phase]
             epoch_accuracy = running_acc2.to(dtype=torch.float32) / dataset_sizes[phase]
@@ -285,7 +296,7 @@ class multi_output_model(torch.nn.Module):
 
         self.y1 = nn.Linear(32, self.num_dataset)
         nn.init.xavier_normal_(self.y1.weight)
-
+        
         self.y2 = nn.Linear(1024 + 32, 5)
         nn.init.xavier_normal_(self.y2.weight)
         
@@ -304,7 +315,7 @@ class multi_output_model(torch.nn.Module):
         # prepare logits following hex paper and github
         y_dataset = self.y1(dataset_feature) # this gonna be supervised   N x 64 -> N x 2
 
-        y_disease = self.y2(torch.cat([diseases_feature, dataset_feature], 1))
+        y_disease = self.y2(torch.cat([diseases_feature, (torch.zeros([dataset_feature.shape[0], 32]).cuda())], 1))
         y_padded = self.y2(torch.cat([(torch.zeros([dataset_feature.shape[0], 1024]).cuda()), dataset_feature], 1))
         y_all = self.y2(torch.cat([diseases_feature, dataset_feature], 1))
 

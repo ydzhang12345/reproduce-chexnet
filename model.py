@@ -60,6 +60,71 @@ def checkpoint(model, best_loss, epoch, LR):
     torch.save(state, 'results/checkpoint')
 
 
+class simpleCNN(torch.nn.Module):
+    def __init__(self):
+        super(simpleCNN, self).__init__()
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(in_channels=3,
+                out_channels=16,
+                kernel_size=5,
+                stride=1,
+                padding=2),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2),
+            ) # 112
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(in_channels=16,
+                out_channels=16,
+                kernel_size=5,
+                stride=1,
+                padding=2),
+            nn.BatchNorm2d(16),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2),
+            ) # 56
+        self.conv3 = nn.Sequential(
+            nn.Conv2d(in_channels=16,
+                out_channels=32,
+                kernel_size=3,
+                stride=1,
+                padding=2),
+            nn.BatchNorm2d(32),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2),
+            ) # 28
+        self.conv4 = nn.Sequential(
+            nn.Conv2d(in_channels=32,
+                out_channels=32,
+                kernel_size=3,
+                stride=1,
+                padding=2),
+            nn.BatchNorm2d(32),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2),
+            ) # 14
+        self.conv5 = nn.Sequential(
+            nn.Conv2d(in_channels=32,
+                out_channels=32,
+                kernel_size=3,
+                stride=1,
+                padding=2),
+            nn.BatchNorm2d(32),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2),
+            ) # 7
+        self.global_pool = nn.AvgPool2d(7, 7)
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
+        x = self.conv4(x)
+        x = self.conv5(x)
+        x = self.global_pool(x)
+        x = x.view(x.size(0), -1)
+        return x
+
+
 def train_model(
         model,
         criterion,
@@ -215,15 +280,15 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     mean = [0.485, 0.456, 0.406]
     std = [0.229, 0.224, 0.225]
 
-    N_LABELS = 2  # we are predicting 14 labels
+    N_LABELS = 3  # we are predicting 14 labels
 
     # load labels
-    df = pd.read_csv("hospital_labels.csv", index_col=0)
+    df = pd.read_csv("new_hospital_labels.csv", index_col=0)
 
     # define torchvision transforms
     data_transforms = {
         'train': transforms.Compose([
-            transforms.Scale(224),
+            transforms.Scale(256),
             # because scale doesn't always give 224 x 224, this ensures 224 x
             # 224
             transforms.CenterCrop(224),
@@ -264,12 +329,16 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     # please do not attempt to train without GPU as will take excessively long
     if not use_gpu:
         raise ValueError("Error, requires GPU")
+
+    
     model = models.densenet121(pretrained=True)
     num_ftrs = model.classifier.in_features
     # add final layer with # outputs in same dimension of labels with sigmoid
     # activation
     model.classifier = nn.Sequential(
         nn.Linear(num_ftrs, N_LABELS))#, nn.Sigmoid())
+    
+    #model = simpleCNN()
 
     # put model on GPU
     model = model.cuda()

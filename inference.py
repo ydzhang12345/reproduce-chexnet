@@ -24,8 +24,8 @@ import cxr_dataset as CXR
 import eval_model as E
 
 
-path_images = '/home/lovebb/Documents/MIBLab/chest-Xray-dataset'
-path_model = '/home/lovebb/Documents/MIBLab/reproduce-chexnet/results/checkpoint'
+path_images = "/home/ben/Desktop/MIBLab/"
+path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/checkpoint'
 
 checkpoint = torch.load(path_model, map_location=lambda storage, loc: storage)
 model = checkpoint['model']

@@ -69,8 +69,8 @@ def make_pred_multilabel(data_transforms, model, PATH_TO_IMAGES):
             # iterate over each entry in prediction vector; each corresponds to
             # individual label
             if len(dataset.PRED_LABEL)==1:
-                thisrow["prob_" + "hospital0"] = probs[j,0]
-                truerow["hospital0"] = int(true_labels[j]==0)
+                thisrow["prob_" + "Dataset ID"] = probs[j].argmax()
+                truerow["Dataset ID"] = true_labels[j]
             else:
                 for k in range(len(dataset.PRED_LABEL)):
                     thisrow["prob_" + dataset.PRED_LABEL[k]] = probs[j, k]
@@ -81,12 +81,14 @@ def make_pred_multilabel(data_transforms, model, PATH_TO_IMAGES):
         
         if(i % 10 == 0):
             print(str(i * BATCH_SIZE))
+        #break
     print (acc.to(dtype=torch.float32) / ((i+1)*BATCH_SIZE)) 
     auc_df = pd.DataFrame(columns=["label", "auc"])
+    #pdb.set_trace()
     # calc AUCs
     for column in true_df:
         if column not in [
-                'hospital0']:
+                'Dataset ID']:
             continue
         '''
         if column not in [
@@ -111,6 +113,7 @@ def make_pred_multilabel(data_transforms, model, PATH_TO_IMAGES):
         thisrow = {}
         thisrow['label'] = column
         thisrow['auc'] = np.nan
+        pdb.set_trace()
         try:
             thisrow['auc'] = sklm.roc_auc_score(
                 actual.as_matrix().astype(int), pred.as_matrix())

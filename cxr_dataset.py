@@ -19,7 +19,7 @@ class CXRDataset(Dataset):
 
         self.transform = transform
         self.path_to_images = path_to_images
-        self.df = pd.read_csv("hospital_labels.csv")
+        self.df = pd.read_csv("new_hospital_labels.csv")
         self.df = self.df[self.df['fold'] == fold]
 
         if(starter_images):
@@ -42,7 +42,7 @@ class CXRDataset(Dataset):
                       " as not in data - please check spelling")
 
         self.df = self.df.set_index("Image Index")
-        self.PRED_LABEL = ['Hospital']
+        self.PRED_LABEL = ['Dataset ID']
         '''
         self.PRED_LABEL = [
             'Atelectasis',
@@ -74,7 +74,7 @@ class CXRDataset(Dataset):
 
         label = np.zeros(len(self.PRED_LABEL), dtype=int)
 
-        '''
+        
         for i in range(0, len(self.PRED_LABEL)):
              # can leave zero if zero, else make one
              
@@ -82,7 +82,7 @@ class CXRDataset(Dataset):
                 label[i] = self.df[self.PRED_LABEL[i].strip()
                                    ].iloc[idx].astype('int')
             
-        '''
+        
         if self.transform:
             image = self.transform(image)
 

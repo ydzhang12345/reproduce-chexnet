@@ -1,0 +1,3 @@
+epoch,train_loss,val_loss
+1,"tensor(0.1577, device='cuda:0')","tensor(0.2164, device='cuda:0')"
+2,"tensor(0.0390, device='cuda:0')","tensor(0.0978, device='cuda:0')"

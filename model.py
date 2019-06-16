@@ -348,7 +348,7 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     std = [0.229, 0.224, 0.225]
 
     # load labels
-    df = pd.read_csv("mimic_labels.csv", index_col=0)
+    df = pd.read_csv("sampled_cheX_mimic.csv", index_col=0)
 
     # define torchvision transforms
     data_transforms = {
@@ -395,16 +395,14 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     if not use_gpu:
         raise ValueError("Error, requires GPU")
     
-    '''
+    
     model = models.densenet121(pretrained=True)
     del model.classifier
     model.classifier = nn.Identity()
     model_new = multi_output_model(model, dropout_ratio=0.2)
     model_new.cuda()
     '''
-    
-
-    
+        
     path_images = '/home/ben/Desktop/MIBLab/'
     path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/checkpoint4'
     checkpoint = torch.load(path_model, map_location=lambda storage, loc: storage)
@@ -418,7 +416,6 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     pdb.set_trace()
     
 
-    '''
     path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/checkpoint4'
     checkpoint = torch.load(path_model, map_location=lambda storage, loc: storage)
     model_new = checkpoint['model']
@@ -427,7 +424,6 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     '''
     
     
-
     # define criterion, optimizer for training
     criterion1 = nn.BCEWithLogitsLoss()
     criterion2 = nn.CrossEntropyLoss()

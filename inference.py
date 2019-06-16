@@ -27,12 +27,12 @@ import pdb
 
 
 path_images = '/home/ben/Desktop/MIBLab/'
-path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/checkpoint10'
+path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/checkpoint11'
 
 checkpoint = torch.load(path_model, map_location=lambda storage, loc: storage)
 model = checkpoint['model']
 del checkpoint
-#model.cuda()
+model.cuda()
 
 
 # build dataloader on test

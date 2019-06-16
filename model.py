@@ -141,7 +141,7 @@ def train_model(
                     optimizer.zero_grad()
                     loss1 = criterion1(pred_hex, label_disease)
                     loss2 = criterion2(pred_dataset, label_dataset)
-                    loss = loss1 + (1 / (epoch + 1)) * loss2
+                    loss = loss1 + loss2
                     #print(loss1, '***', loss2):
                     loss.backward()
                     optimizer.step()
@@ -172,10 +172,14 @@ def train_model(
                 epoch, epoch_loss1, epoch_loss2, epoch_accuracy, dataset_sizes[phase]))
 
             # decay learning rate if no val loss improvement in this epoch
-            if phase == 'val' and epoch_loss1 > best_loss:
+            if phase == 'val': #and epoch_loss1 > best_loss:
+                LR = 0.005*(np.cos(epoch*np.pi/10) + 1)
+
+                '''
                 print("decay loss from " + str(LR) + " to " +
                       str(LR / 10) + " as not seeing improvement in val loss")
                 LR = LR / 10
+                '''
                 # create new optimizer with lower learning rate
                 optimizer = optim.SGD(
                     filter(
@@ -292,19 +296,23 @@ class multi_output_model(torch.nn.Module):
         self.simpleCNN = simpleCNN()
         self.num_dataset = 2
 
-        #heads
+        self.x1 = nn.Linear(1024, 1024)
+        nn.init.xavier_normal_(self.x1.weight)
 
+        #heads
         self.y1 = nn.Linear(32, self.num_dataset)
         nn.init.xavier_normal_(self.y1.weight)
         
         self.y2 = nn.Linear(1024 + 32, 5)
         nn.init.xavier_normal_(self.y2.weight)
+
+        self.d_out = nn.Dropout(0.2)
         
 
     def forward(self, x, phase):
 
         # prepare feature
-        diseases_feature = self.densenet_model(x)
+        diseases_feature = self.x1(self.d_out(self.densenet_model(x)))
         dataset_feature = self.simpleCNN(x)
 
         # l2-normalize as indicated in the paper
@@ -314,6 +322,13 @@ class multi_output_model(torch.nn.Module):
         ## start hex projection
         # prepare logits following hex paper and github
         y_dataset = self.y1(dataset_feature) # this gonna be supervised   N x 64 -> N x 2
+
+        '''
+        weight_mean = self.y2.weight.mean(dim=0, keepdim=True).mean(dim=1, keepdim=True)
+        weight = self.y2.weight - weight_mean
+        weight_std = self.y2.weight.view(-1).std(dim=0)
+        weight = (self.y2.weight - weight_mean) / weight_std
+        '''
 
         y_disease = self.y2(torch.cat([diseases_feature, (torch.zeros([dataset_feature.shape[0], 32]).cuda())], 1))
         y_padded = self.y2(torch.cat([(torch.zeros([dataset_feature.shape[0], 1024]).cuda()), dataset_feature], 1))
@@ -340,7 +355,7 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
 
     """
     NUM_EPOCHS = 100
-    BATCH_SIZE = 36
+    BATCH_SIZE = 45
     '''
     try:
         rmtree('results/')
@@ -403,20 +418,21 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     if not use_gpu:
         raise ValueError("Error, requires GPU")
 
-    '''
+    
     model = models.densenet121(pretrained=True)
     del model.classifier
     model.classifier = nn.Identity()
     model_new = multi_output_model(model)
     model_new.cuda()   
-    ''' 
+    
 
+    '''
     path_model = '/home/lovebb/Documents/MIBLab/undo_bias/reproduce-chexnet/results/checkpoint1'
-
     checkpoint = torch.load(path_model, map_location=lambda storage, loc: storage)
     model_new = checkpoint['model']
     del checkpoint
     model_new.cuda()
+    '''
     
 
     # define criterion, optimizer for training

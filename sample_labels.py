@@ -40,6 +40,7 @@ np.random.seed(2019)
 nih = {"train":0, "val":0, "test":0}
 chex = {"train":0, "val":0, "test":0}
 mimic = {"train":0, "val":0, "test":0}
+
 with open('new_hospital_labels.csv', 'w', newline='') as file:
 	writer = csv.writer(file, quotechar='|', quoting=csv.QUOTE_MINIMAL)
 	writer.writerow(['Image Index', 'Dataset ID', 'fold'])

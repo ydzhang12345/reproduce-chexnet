@@ -2,6 +2,44 @@ import csv
 import pdb
 import numpy as np
 
+
+out_mimic = []
+out_chex = []
+with open('sampled_cheX_mimic.csv') as file:
+	reader = csv.reader(file, quotechar='|')
+	count = 0
+	for row in reader:
+		if count==0:
+			count += 1
+			out_chex.append(row)
+			out_mimic.append(row)
+			continue
+		if "CheXpert" in row[0]:
+			out_chex.append(row)
+		else:
+			out_mimic.append(row)
+with open('sampled_mimic.csv', 'w', newline='') as file:
+	writer = csv.writer(file, quotechar='|', quoting=csv.QUOTE_MINIMAL)
+	for row in out_mimic:
+		writer.writerow(row)
+
+with open('sampled_chex.csv', 'w', newline='') as file:
+	writer = csv.writer(file, quotechar='|', quoting=csv.QUOTE_MINIMAL)
+	for row in out_chex:
+		writer.writerow(row)
+
+
+
+pdb.set_trace()
+
+
+
+
+
+
+
+
+
 nih_imgs = {}
 nih_list = []
 chex_imgs = {}

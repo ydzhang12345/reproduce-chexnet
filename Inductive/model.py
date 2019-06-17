@@ -247,17 +247,19 @@ def train_model(
                 with open("results/log_train", 'a') as logfile:
                     logwriter = csv.writer(logfile, delimiter=',')
                     if(epoch == 1):
-                        logwriter.writerow(["epoch", "train_loss", "val_loss"])
-                    logwriter.writerow([epoch, last_train_loss, epoch_loss1])
+                        logwriter.writerow(["epoch", "train_loss", "val_loss", "target_loss"])
+                    logwriter.writerow([epoch, last_train_loss, epoch_loss1, target_loss / dataset_sizes[1][phase]])
         
         total_done += batch_size
         if(total_done % (100 * batch_size) == 0):
             print("completed " + str(total_done) + " so far in epoch")
+
+        '''
         # break if no val loss improvement in 3 epochs
         if ((epoch - best_epoch) >= 3):
             print("no improvement in 3 epochs, break")
             break
-        #break
+        '''
 
     time_elapsed = time.time() - since
     print('Training complete in {:.0f}m {:.0f}s'.format(
@@ -279,17 +281,17 @@ class multi_output_model(torch.nn.Module):
 
         self.class_classifier = nn.Sequential()
         self.class_classifier.add_module('c_fc1', nn.Linear(1024, 1024))
-        #self.class_classifier.add_module('c_bn1', nn.BatchNorm1d(1024))
+        self.class_classifier.add_module('c_bn1', nn.BatchNorm1d(1024))
         self.class_classifier.add_module('c_relu1', nn.ReLU(True))
-        #self.class_classifier.add_module('c_drop1', nn.Dropout2d())
-        #self.class_classifier.add_module('c_fc2', nn.Linear(1024, 1024))
-        #self.class_classifier.add_module('c_bn2', nn.BatchNorm1d(1024))
-        #self.class_classifier.add_module('c_relu2', nn.ReLU(True))
+        self.class_classifier.add_module('c_drop1', nn.Dropout2d())
+        self.class_classifier.add_module('c_fc2', nn.Linear(1024, 1024))
+        self.class_classifier.add_module('c_bn2', nn.BatchNorm1d(1024))
+        self.class_classifier.add_module('c_relu2', nn.ReLU(True))
         self.class_classifier.add_module('c_fc3', nn.Linear(1024, 5))
 
         self.domain_classifier = nn.Sequential()
         self.domain_classifier.add_module('d_fc1', nn.Linear(1024, 32))
-        #self.domain_classifier.add_module('d_bn1', nn.BatchNorm1d(32))
+        self.domain_classifier.add_module('d_bn1', nn.BatchNorm1d(32))
         self.domain_classifier.add_module('d_relu1', nn.ReLU(True))
         self.domain_classifier.add_module('d_fc2', nn.Linear(32, 2))
         self.d_out = nn.Dropout(0.2)

@@ -80,6 +80,17 @@ def checkpoint(model, best_loss, epoch, LR):
 
     torch.save(state, 'results/checkpoint' + str(epoch))
 
+def optimizer_scheduler(optimizer, p):
+    """
+    Adjust the learning rate of optimizer
+    :param optimizer: optimizer for updating parameters
+    :param p: a variable for adjusting learning rate
+    :return: optimizer
+    """
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = 0.01 / (1. + 10 * p) ** 0.75
+
+    return optimizer
 
 def train_model(
         model,
@@ -144,6 +155,7 @@ def train_model(
             for data1, data2 in zip(dataloaders[0][phase], dataloaders[1][phase]):
                 p = float(i + epoch * total_batch) / num_epochs / total_batch
                 alpha =  2. / (1. + np.exp(-10 * p)) - 1
+                optimizer_scheduler(optimizer, p)
 
                 i += 1
                 # source domain
@@ -237,10 +249,10 @@ def train_model(
             
             
             # checkpoint model if has best val loss yet
-            if phase == 'val' and epoch_loss1 < best_loss:
-                best_loss = epoch_loss1
-                best_epoch = epoch
-                checkpoint(model, best_loss, epoch, LR)
+            if phase == 'val': #and epoch_loss1 < best_loss:
+                #best_loss = epoch_loss1
+                #best_epoch = epoch
+                checkpoint(model, target_loss, epoch, LR)
 
             # log training and validation loss over each epoch
             if phase == 'val':
@@ -290,10 +302,10 @@ class multi_output_model(torch.nn.Module):
         self.class_classifier.add_module('c_fc3', nn.Linear(1024, 5))
 
         self.domain_classifier = nn.Sequential()
-        self.domain_classifier.add_module('d_fc1', nn.Linear(1024, 32))
-        self.domain_classifier.add_module('d_bn1', nn.BatchNorm1d(32))
+        self.domain_classifier.add_module('d_fc1', nn.Linear(1024, 100))
+        self.domain_classifier.add_module('d_bn1', nn.BatchNorm1d(100))
         self.domain_classifier.add_module('d_relu1', nn.ReLU(True))
-        self.domain_classifier.add_module('d_fc2', nn.Linear(32, 2))
+        self.domain_classifier.add_module('d_fc2', nn.Linear(100, 2))
         self.d_out = nn.Dropout(0.2)
 
     def forward(self, x, alpha):
@@ -327,8 +339,10 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
         os.makedirs("results/")
 
     # use imagenet mean,std for normalization
-    mean = [0.485, 0.456, 0.406]
-    std = [0.229, 0.224, 0.225]
+    mean = [0.5, 0.5, 0.5]
+    std = [0.5, 0.5, 0.5]
+    #mean = [0.485, 0.456, 0.406]
+    #std = [0.229, 0.224, 0.225]
 
     # define torchvision transforms
     data_transforms = {
@@ -401,7 +415,7 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
         raise ValueError("Error, requires GPU")
     
     
-    model = models.densenet121(pretrained=True)
+    model = models.densenet121(pretrained=False)
     del model.classifier
     model.classifier = nn.Identity()
     model_new = multi_output_model(model, dropout_ratio=0.2)

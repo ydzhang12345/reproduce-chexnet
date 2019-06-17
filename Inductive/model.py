@@ -154,7 +154,7 @@ def train_model(
             # iterate over all data in train/val dataloader:
             for data1, data2 in zip(dataloaders[0][phase], dataloaders[1][phase]):
                 p = float(i + epoch * total_batch) / num_epochs / total_batch
-                alpha =  2. / (1. + np.exp(-10 * p)) - 1
+                alpha = 1 -  (2. / (1. + np.exp(-10 * p)) - 1)
                 optimizer_scheduler(optimizer, p)
 
                 i += 1

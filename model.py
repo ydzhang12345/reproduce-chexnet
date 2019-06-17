@@ -108,7 +108,7 @@ def train_model(
     last_train_loss = -1
 
     # iterate over epochs
-    for epoch in range(num_epochs):
+    for epoch in range(1, num_epochs):
         print('Epoch {}/{}'.format(epoch, num_epochs))
         print('-' * 10)
 
@@ -133,7 +133,7 @@ def train_model(
             # iterate over all data in train/val dataloader:
             for data in dataloaders[phase]:
                 p = float(i + epoch * len(dataloaders[phase])) / num_epochs / len(dataloaders[phase])
-                alpha = 2. / (1. + np.exp(-10 * p)) - 1
+                alpha =  2. / (1. + np.exp(-10 * p)) - 1
 
                 i += 1
                 inputs, label_disease, label_dataset, _ = data
@@ -156,7 +156,7 @@ def train_model(
                     loss1 = criterion1(class_out, label_disease)
                     loss2 = criterion2(domain_out, label_dataset)
                     loss = loss1 + loss2
-                    print(loss1, '***', loss2)
+                    #print(loss1, '***', loss2)
                     loss.backward()
                     optimizer.step()
                 else:
@@ -184,8 +184,9 @@ def train_model(
             print(phase + ' epoch {}:loss1 {:.4f}, loss2 {:.4f}, acc {:.4f} with data size {}'.format(
                 epoch, epoch_loss1, epoch_loss2, epoch_accuracy, dataset_sizes[phase]))
 
-            '''
+            
             # decay learning rate if no val loss improvement in this epoch
+            '''
             if phase == 'val' and epoch_loss1 > best_loss:
                 print("decay loss from " + str(LR) + " to " +
                       str(LR / 10) + " as not seeing improvement in val loss")
@@ -201,7 +202,7 @@ def train_model(
                 print("created new optimizer with LR " + str(LR))
             '''
             
-
+            
             # checkpoint model if has best val loss yet
             if phase == 'val' and epoch_loss1 < best_loss:
                 best_loss = epoch_loss1
@@ -245,7 +246,7 @@ class multi_output_model(torch.nn.Module):
 
         self.class_classifier = nn.Sequential()
         self.class_classifier.add_module('c_fc1', nn.Linear(1024, 1024))
-        self.class_classifier.add_module('c_bn1', nn.BatchNorm1d(1024))
+        #self.class_classifier.add_module('c_bn1', nn.BatchNorm1d(1024))
         self.class_classifier.add_module('c_relu1', nn.ReLU(True))
         #self.class_classifier.add_module('c_drop1', nn.Dropout2d())
         #self.class_classifier.add_module('c_fc2', nn.Linear(1024, 1024))
@@ -255,7 +256,7 @@ class multi_output_model(torch.nn.Module):
 
         self.domain_classifier = nn.Sequential()
         self.domain_classifier.add_module('d_fc1', nn.Linear(1024, 32))
-        self.domain_classifier.add_module('d_bn1', nn.BatchNorm1d(32))
+        #self.domain_classifier.add_module('d_bn1', nn.BatchNorm1d(32))
         self.domain_classifier.add_module('d_relu1', nn.ReLU(True))
         self.domain_classifier.add_module('d_fc2', nn.Linear(32, 2))
         self.d_out = nn.Dropout(0.2)
@@ -345,14 +346,18 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     model.classifier = nn.Identity()
     model_new = multi_output_model(model, dropout_ratio=0.2)
     model_new.cuda()
-    '''
-        
+    
+
+    '''  
     path_images = '/home/ben/Desktop/MIBLab/'
-    path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/checkpoint4'
+    path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/checkpoint9'
     checkpoint = torch.load(path_model, map_location=lambda storage, loc: storage)
     model_new = checkpoint['model']
     model_new.cuda()
     del checkpoint
+    '''
+
+    '''
     
     torch.backends.cudnn.enabled = False
     preds, aucs = E.make_pred_multilabel(
@@ -371,14 +376,7 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     # define criterion, optimizer for training
     criterion1 = nn.BCEWithLogitsLoss()
     criterion2 = nn.CrossEntropyLoss()
-
-    optimizer = optim.Adam(        
-        filter(
-            lambda p: p.requires_grad,
-            model_new.parameters()),
-        lr=LR)
-
-    '''
+    
     optimizer = optim.SGD(
         filter(
             lambda p: p.requires_grad,
@@ -386,7 +384,7 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
         lr=LR,
         momentum=0.9,
         weight_decay=WEIGHT_DECAY)
-    '''
+    
     dataset_sizes = {x: len(transformed_datasets[x]) for x in ['train', 'val']}
 
     # train model

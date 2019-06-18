@@ -35,6 +35,14 @@ use_gpu = torch.cuda.is_available()
 gpu_count = torch.cuda.device_count()
 print("Available GPU count:" + str(gpu_count))
 
+def setup_seed(seed):
+     torch.manual_seed(seed)
+     torch.cuda.manual_seed_all(seed)
+     np.random.seed(seed)
+     torch.backends.cudnn.deterministic = True
+
+setup_seed(2019)
+
 
 def checkpoint(model, best_loss, epoch, LR):
     """
@@ -122,16 +130,12 @@ def train_model(
             for data in dataloaders[phase]:
                 i += 1
                 inputs, label_disease, label_dataset, _ = data
-                #label_disease = label_disease.to(dtype=torch.int64)
                 label_dataset = label_dataset.to(dtype=torch.int64)
-                #label_disease = label_disease.reshape(-1)
                 label_dataset = label_dataset.reshape(-1)
-                #labels = labels.reshape(-1)
                 batch_size = inputs.shape[0]
                 inputs = Variable(inputs.cuda())
                 label_disease = Variable(label_disease.cuda()).float()
                 label_dataset = Variable(label_dataset.cuda())
-                #labels = Variable(labels.cuda())
 
                 if phase=='train':
                     pred_disease, pred_dataset, pred_raw = model.forward(inputs, phase)
@@ -250,7 +254,7 @@ class multi_output_model(torch.nn.Module):
         #self.bn2 = nn.BatchNorm1d(512, eps = 2e-1)
 
         #heads
-        self.y1 = nn.Linear(32, self.num_dataset)
+        self.y1 = nn.Linear(1024 + 32, self.num_dataset)
         nn.init.xavier_normal_(self.y1.weight)
 
         self.y2 = nn.Linear(1024 + 32, 5)
@@ -272,41 +276,24 @@ class multi_output_model(torch.nn.Module):
         diseases_feature = F.relu(self.x2(common_feature)) # of 1024
         diseases_feature = F.normalize(diseases_feature, p=2, dim=0)
 
-        ## start hex projection
+        #y_dataset = self.y1(dataset_feature) # this gonna be supervised   N x 32 -> N x 2
+
+        ## start hex projection 1st path
         # prepare logits following hex paper and github
-        y_dataset = self.y1(dataset_feature) # this gonna be supervised   N x 32 -> N x 2
-        y_disease = self.y2(torch.cat([diseases_feature, dataset_feature], 1)) # N x 1056 -> N x 5
-        y_padded = self.y2(torch.cat([torch.zeros_like(diseases_feature), dataset_feature], 1))
-        y_raw = self.y2(torch.cat([diseases_feature, torch.zeros_like(dataset_feature)], 1))
+        y_concat1 = self.y2(torch.cat([diseases_feature, dataset_feature], 1)) # N x 1056 -> N x 5
+        y_pad_dataset = self.y2(torch.cat([torch.zeros_like(diseases_feature), dataset_feature], 1))
+        y_disease_pad = self.y2(torch.cat([diseases_feature, torch.zeros_like(dataset_feature)], 1))
+        y_hex1 = y_concat1 - torch.mm(torch.mm(torch.mm(y_pad_dataset, torch.inverse(torch.mm(y_pad_dataset.t(), y_pad_dataset))), y_pad_dataset.t()), y_concat1)
 
-        # to project
-        y_hex = y_disease -  torch.mm(torch.mm(torch.mm(y_padded, torch.inverse(torch.mm(y_padded.t(), y_padded))), y_padded.t()), y_disease)
+        ## start hex projection 2nd path
+        # prepare logits following hex paper and github
+        y_concat2 = self.y1(torch.cat([dataset_feature, diseases_feature], 1)) # N x 1056 -> N x 5
+        y_pad_diseases = self.y1(torch.cat([torch.zeros_like(dataset_feature), diseases_feature], 1))
+        y_dataset_pad = self.y1(torch.cat([dataset_feature, torch.zeros_like(diseases_feature)], 1))
+        y_hex2 = y_concat2 - torch.mm(torch.mm(torch.mm(y_pad_diseases, torch.inverse(torch.mm(y_pad_diseases.t(), y_pad_diseases))), y_pad_diseases.t()), y_concat2)
         
-        return y_hex, y_dataset, y_raw
+        return y_hex1, y_hex2, y_disease_pad
 
-
-'''
-def densenet121_hex(input_data):
-    model_ft = models.densenet121(pretrained=True)
-
-
-    #num_ftrs = model.classifier.in_features
-    # add final layer with # outputs in same dimension of labels with sigmoid
-    # activation
-    #model.classifier = nn.Sequential(
-    #    nn.Linear(num_ftrs, N_LABELS))#, nn.Sigmoid())
-
-
-    #num_ftrs = model_ft.fc.in_features
-    #model_ft.fc = nn.Linear(num_ftrs, 512)
-
-    dd = .1
-    model_1 = multi_output_model(model_ft,dd)
-    model_1 = model_1.to(device)
-    print(model_1)
-    print(model_1.parameters())    
-    criterion = [nn.CrossEntropyLoss(),nn.CrossEntropyLoss(),nn.CrossEntropyLoss(),nn.CrossEntropyLoss(),nn.BCELoss()]
-'''
 
 def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     """

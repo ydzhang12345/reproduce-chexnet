@@ -120,7 +120,7 @@ def train_model(
 
     """
     since = time.time()
-    num_epochs = 100
+    num_epochs = 30
 
     best_loss = 999999
     best_epoch = -1
@@ -154,7 +154,7 @@ def train_model(
             # iterate over all data in train/val dataloader:
             for data1, data2 in zip(dataloaders[0][phase], dataloaders[1][phase]):
                 p = float(i + epoch * total_batch) / num_epochs / total_batch
-                alpha = 1 -  (2. / (1. + np.exp(-10 * p)) - 1)
+                alpha = 2. / (1. + np.exp(-10 * p)) - 1
                 optimizer_scheduler(optimizer, p)
 
                 i += 1
@@ -196,6 +196,7 @@ def train_model(
                     #print(loss1, '***', loss2)
                     loss.backward()
                     optimizer.step()
+                    total_done += batch_size
                 else:
                     optimizer.zero_grad()
                     s_loss1 = criterion1(s_class_out, s_label_disease)
@@ -210,6 +211,7 @@ def train_model(
                     total_acc += np.sum(np.uint8(probs>0.5)==label_disease)
                     '''
                     target_loss += t_loss1.data * batch_size
+                    total_done += batch_size
 
                 running_loss1 += s_loss1.data * batch_size
                 running_loss2 += s_loss2.data + t_loss2.data
@@ -217,20 +219,20 @@ def train_model(
                 #running_acc2 += torch.sum(domain_out.argmax(dim=1) == label_dataset)
 
             #pdb.set_trace()
-            epoch_loss1 = running_loss1 / dataset_sizes[0][phase]
+            epoch_loss1 = running_loss1 / total_done
             epoch_loss2 = running_loss2 / total_batch 
             #epoch_accuracy = running_acc2.to(dtype=torch.float32) / dataset_sizes[phase]
             if phase == 'train':
                 last_train_loss = epoch_loss1
             else:
-                print("target domain loss: ", target_loss / dataset_sizes[1][phase])
+                print("target domain loss: ", target_loss / total_done)
 
             print(phase + ' epoch {}:loss1 {:.4f}, loss2 {:.4f} with data size {}'.format(
-                epoch, epoch_loss1, epoch_loss2, dataset_sizes[0][phase]))
+                epoch, epoch_loss1, epoch_loss2, total_done))
 
             
             # decay learning rate if no val loss improvement in this epoch
-            '''
+            
             if phase == 'val' and epoch_loss1 > best_loss:
                 print("decay loss from " + str(LR) + " to " +
                       str(LR / 10) + " as not seeing improvement in val loss")
@@ -244,7 +246,7 @@ def train_model(
                     momentum=0.9,
                     weight_decay=weight_decay)
                 print("created new optimizer with LR " + str(LR))
-            '''
+            
             
             
             
@@ -367,12 +369,12 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     transformed_datasets1['train'] = CXR.CXRDataset(
         path_to_images=PATH_TO_IMAGES,
         fold='train',
-        label_path='sampled_nih.csv',
+        label_path='sampled_mimic.csv',
         transform=data_transforms['train'])
     transformed_datasets1['val'] = CXR.CXRDataset(
         path_to_images=PATH_TO_IMAGES,
         fold='val',
-        label_path='sampled_nih.csv',
+        label_path='sampled_mimic.csv',
         transform=data_transforms['val'])
     dataloaders1 = {}
     dataloaders1['train'] = torch.utils.data.DataLoader(

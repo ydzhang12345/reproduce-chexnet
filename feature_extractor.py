@@ -27,11 +27,12 @@ import pandas as pd
 import numpy as np
 import csv
 import pdb
+import pickle
 
 import cxr_dataset as CXR
 
 ## load model
-PATH_TO_IMAGES = 'starter_images/'
+PATH_TO_IMAGES = '/home/ben/Desktop/MIBLab/'
 path_model = 'results/checkpoint11'
 
 checkpoint = torch.load(path_model, map_location=lambda storage, loc: storage)
@@ -63,7 +64,11 @@ dataloader = torch.utils.data.DataLoader(
 
 
 # first extract features: trained model before proj and after proj
-feature_bank = []
+disease_feature_bank = []
+dataset_feature_bank = []
+label_disease_bank = []
+label_dataset_bank = []
+
 with torch.no_grad():
 	model.eval()
 	for i, data in enumerate(dataloader):
@@ -78,6 +83,26 @@ with torch.no_grad():
 		common_feature = model.densenet_model(inputs)
 		dataset_feature = (model.x1(common_feature)).cpu().data.numpy()
 		disease_feature = (model.x2(common_feature)).cpu().data.numpy()
+		label_disease = label_disease.cpu().data.numpy()
+		label_dataset = label_dataset.cpu().data.numpy()
+		
+		disease_feature_bank.append(disease_feature)
+		dataset_feature_bank.append(dataset_feature)
+		label_disease_bank.append(label_disease)
+		label_dataset_bank.append(label_dataset)
+
+
+disease_feature = np.concatenate(disease_feature_bank, axis=0)
+dataset_feature = np.concatenate(dataset_feature_bank, axis=0)
+label_disease = np.concatenate(label_disease_bank, axis=0)
+label_dataset = np.concatenate(label_dataset_bank, axis=0)
+
+plk_dict = {"x_disease": disease_feature, 'x_dataset': dataset_feature, 'y_disease': label_disease, 'y_dataset': label_dataset}
+print ('feature extraction done!')
+
+with open('extracted_feature.pkl', 'wb') as f:
+	pickle.dump(plk_dict, f)
+
 
 		
 

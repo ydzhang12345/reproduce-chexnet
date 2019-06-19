@@ -8,10 +8,11 @@ import pdb
 
 
 # read feature
-with open('extracted_feature.pkl', 'rb') as f:
+with open('extracted_feature_baseline.pkl', 'rb') as f:
 	extract_dict = pickle.load(f)
 	x_disease, y_disease_raw = extract_dict['x_disease'], extract_dict['y_disease']
-	x_dataset, y_dataset = extract_dict['x_dataset'], extract_dict['y_dataset']
+	#x_dataset, y_dataset = extract_dict['x_dataset'], extract_dict['y_dataset']
+	y_dataset = extract_dict['y_dataset']
 
 
 y_disease = []

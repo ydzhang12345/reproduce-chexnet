@@ -26,8 +26,16 @@ import eval_model as E
 import pdb
 
 
+
+def setup_seed(seed):
+     torch.manual_seed(seed)
+     torch.cuda.manual_seed_all(seed)
+     np.random.seed(seed)
+     torch.backends.cudnn.deterministic = True
+
+setup_seed(2016)
 path_images = '/home/ben/Desktop/MIBLab/'
-path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/checkpoint11'
+path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/single-hex-alexnet/checkpoint18'
 
 checkpoint = torch.load(path_model, map_location=lambda storage, loc: storage)
 model = checkpoint['model']

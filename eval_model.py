@@ -28,7 +28,7 @@ def make_pred_multilabel(data_transforms, model, PATH_TO_IMAGES):
 
     with torch.no_grad():
         # calc preds in batches of 16, can reduce if your GPU has less RAM
-        BATCH_SIZE = 50
+        BATCH_SIZE = 128
 
         # set model to eval mode; required for proper predictions given use of batchnorm
         model.train(False)
@@ -115,8 +115,8 @@ def make_pred_multilabel(data_transforms, model, PATH_TO_IMAGES):
                 
             if(i % 10 == 0):
                 print(str(i * BATCH_SIZE))
-        print(total_acc / ((i+1)*BATCH_SIZE*5))
-        print (acc.to(dtype=torch.float32) / ((i+1)*BATCH_SIZE)) 
+        print(total_acc) #/ ((i+1)*BATCH_SIZE*5))
+        print (acc.to(dtype=torch.float32)) #/ ((i+1)*BATCH_SIZE)) 
         #pdb.set_trace()
         auc_df = pd.DataFrame(columns=["label", "auc"])
         # calc AUCs

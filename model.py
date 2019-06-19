@@ -145,7 +145,7 @@ def train_model(
                     optimizer.zero_grad()
                     loss1 = criterion1(pred_disease, label_disease)
                     loss2 = criterion2(pred_dataset, label_dataset)
-                    #print(loss1, "*****", loss2)
+                    print(loss1, "*****", loss2)
                     loss = loss1 + loss2
                     loss.backward()
                     optimizer.step()
@@ -241,19 +241,22 @@ class multi_output_model(torch.nn.Module):
 
         #https://blog.csdn.net/Geek_of_CSDN/article/details/90179421
         
-        self.x1 =  nn.Linear(1024, 32)
+        self.x1 =  nn.Linear(9216, 32)
         nn.init.xavier_normal_(self.x1.weight)
         #self.bn1 = nn.BatchNorm1d(64,eps = 2e-1)
         
-        self.x2 =  nn.Linear(1024, 1024)
+        self.x2 =  nn.Linear(9216, 4096)
         nn.init.xavier_normal_(self.x2.weight)
         #self.bn2 = nn.BatchNorm1d(512, eps = 2e-1)
+
+        self.x3 = nn.Linear(4096, 4096)
+        nn.init.xavier_normal_(self.x3.weight)
 
         #heads
         self.y1 = nn.Linear(32, self.num_dataset)
         nn.init.xavier_normal_(self.y1.weight)
 
-        self.y2 = nn.Linear(1024 + 32, 5)
+        self.y2 = nn.Linear(4096 + 32, 5)
         nn.init.xavier_normal_(self.y2.weight)
         
         self.d_out = nn.Dropout(dropout_ratio)
@@ -269,7 +272,7 @@ class multi_output_model(torch.nn.Module):
         dataset_feature =  F.relu(self.x1(common_feature)) # of 32
         dataset_feature = F.normalize(dataset_feature, p=2, dim=0)
 
-        diseases_feature = F.relu(self.x2(common_feature)) # of 1024
+        diseases_feature = F.relu(self.x3(F.relu(self.x2(common_feature)))) # of 1024
         diseases_feature = F.normalize(diseases_feature, p=2, dim=0)
 
         ## start hex projection
@@ -323,7 +326,7 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
 
     """
     NUM_EPOCHS = 100
-    BATCH_SIZE = 50
+    BATCH_SIZE = 128
 
     if not os.path.exists("results/"):
         os.makedirs("results/")
@@ -381,7 +384,8 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
         raise ValueError("Error, requires GPU")
     
     
-    model = models.densenet121(pretrained=True)
+    #model = models.densenet121(pretrained=True)
+    model = models.alexnet(pretrained=True)
     del model.classifier
     model.classifier = nn.Identity()
     model_new = multi_output_model(model, dropout_ratio=0.2)
@@ -412,6 +416,7 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     # define criterion, optimizer for training
     criterion1 = nn.BCEWithLogitsLoss()
     criterion2 = nn.CrossEntropyLoss()
+    '''
     optimizer = optim.SGD(
         filter(
             lambda p: p.requires_grad,
@@ -419,6 +424,14 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
         lr=LR,
         momentum=0.9,
         weight_decay=WEIGHT_DECAY)
+    '''
+    optimizer = optim.Adam(
+        filter(
+            lambda p: p.requires_grad,
+            model_new.parameters()),
+        lr=LR)
+        #momentum=0.9,
+        #weight_decay=WEIGHT_DECAY)
     dataset_sizes = {x: len(transformed_datasets[x]) for x in ['train', 'val']}
 
     # train model

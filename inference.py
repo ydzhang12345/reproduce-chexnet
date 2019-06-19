@@ -35,15 +35,16 @@ def setup_seed(seed):
 
 setup_seed(2016)
 path_images = '/home/ben/Desktop/MIBLab/'
-path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/single-hex-alexnet/checkpoint18'
+path_model = '/home/ben/Desktop/MIBLab/hospital-cls/hex_out-results/single-hex/checkpoint11'
 
 checkpoint = torch.load(path_model, map_location=lambda storage, loc: storage)
 model = checkpoint['model']
 del checkpoint
 model.cuda()
 
-
 # build dataloader on test
+
+
 mean = [0.485, 0.456, 0.406]
 std = [0.229, 0.224, 0.225]
 

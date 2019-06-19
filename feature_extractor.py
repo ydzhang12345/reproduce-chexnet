@@ -33,7 +33,7 @@ import cxr_dataset as CXR
 
 ## load model
 PATH_TO_IMAGES = '/home/ben/Desktop/MIBLab/'
-path_model = 'results/checkpoint11'
+path_model = 'checkpoint'
 
 checkpoint = torch.load(path_model, map_location=lambda storage, loc: storage)
 model = checkpoint['model']
@@ -64,6 +64,9 @@ dataloader = torch.utils.data.DataLoader(
 
 
 # first extract features: trained model before proj and after proj
+hex_flag = False
+
+'''
 disease_feature_bank = []
 dataset_feature_bank = []
 label_disease_bank = []
@@ -91,16 +94,48 @@ with torch.no_grad():
 		label_disease_bank.append(label_disease)
 		label_dataset_bank.append(label_dataset)
 
-
 disease_feature = np.concatenate(disease_feature_bank, axis=0)
 dataset_feature = np.concatenate(dataset_feature_bank, axis=0)
 label_disease = np.concatenate(label_disease_bank, axis=0)
 label_dataset = np.concatenate(label_dataset_bank, axis=0)
 
 plk_dict = {"x_disease": disease_feature, 'x_dataset': dataset_feature, 'y_disease': label_disease, 'y_dataset': label_dataset}
+'''
+
+disease_feature_bank = []
+label_disease_bank = []
+label_dataset_bank = []
+
+with torch.no_grad():
+	model.classifier = torch.nn.Identity()
+	model.eval()
+	for i, data in enumerate(dataloader):
+		inputs, label_disease, label_dataset, _ = data
+		label_dataset = label_dataset.to(dtype=torch.int64)
+		label_dataset = label_dataset.reshape(-1)
+		batch_size = inputs.shape[0]
+		inputs = Variable(inputs.cuda())
+		label_disease = Variable(label_disease.cuda()).float()
+		label_dataset = Variable(label_dataset.cuda())
+
+		#pdb.set_trace()
+		common_feature = model(inputs)
+		disease_feature = common_feature.cpu().data.numpy()
+		label_disease = label_disease.cpu().data.numpy()
+		label_dataset = label_dataset.cpu().data.numpy()
+		
+		disease_feature_bank.append(disease_feature)
+		label_disease_bank.append(label_disease)
+		label_dataset_bank.append(label_dataset)
+
+disease_feature = np.concatenate(disease_feature_bank, axis=0)
+label_disease = np.concatenate(label_disease_bank, axis=0)
+label_dataset = np.concatenate(label_dataset_bank, axis=0)
+
+plk_dict = {"x_disease": disease_feature, 'y_disease': label_disease, 'y_dataset': label_dataset}
 print ('feature extraction done!')
 
-with open('extracted_feature.pkl', 'wb') as f:
+with open('extracted_feature_baseline.pkl', 'wb') as f:
 	pickle.dump(plk_dict, f)
 
 

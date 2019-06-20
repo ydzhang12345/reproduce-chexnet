@@ -288,28 +288,67 @@ class multi_output_model(torch.nn.Module):
         return y_hex, y_dataset, y_raw
 
 
-'''
-def densenet121_hex(input_data):
-    model_ft = models.densenet121(pretrained=True)
+# there can also be a v3 where we design a similar SE block!!! good!
+
+class multi_output_model_v2(torch.nn.Module):
+    def __init__(self, model_core, dropout_ratio):
+        super(multi_output_model, self).__init__()
+        
+        self.densenet_model = model_core
+        self.num_dataset = 2
+        
+        self.x1 =  nn.Linear(9216, 2048)
+        nn.init.xavier_normal_(self.x1.weight)
+        #self.bn2 = nn.BatchNorm1d(512, eps = 2e-1)
+
+        self.x2 = nn.Linear(2048, 512)
+        nn.init.xavier_normal_(self.x2.weight)
+
+        self.y1 = nn.Linear(512, 5)
+        nn.init.xavier_normal_(self.y1.weight)
 
 
-    #num_ftrs = model.classifier.in_features
-    # add final layer with # outputs in same dimension of labels with sigmoid
-    # activation
-    #model.classifier = nn.Sequential(
-    #    nn.Linear(num_ftrs, N_LABELS))#, nn.Sigmoid())
+        self.c1 =  nn.Linear(9216, 512)
+        nn.init.xavier_normal_(self.c1.weight)
+
+        self.y2 = nn.Linear(512, self.num_dataset)
+        nn.init.xavier_normal_(self.y2.weight)
+
+        self.fc = nn.Linear(512, 512)
+        nn.init.xavier_normal_(self.fc.weight)
+        
+        self.d_out = nn.Dropout(dropout_ratio)
+
+    def forward(self, x, phase):
+
+        # prepare feature
+        common_feature = self.densenet_model(x)
+        # add dropout
+        common_feature = self.d_out(common_feature) 
+
+        # l2-normalize as indicated in the paper
+        diseases_feature = F.relu(self.x2(F.relu(self.x1(common_feature)))) 
+        diseases_feature = F.normalize(diseases_feature, p=2, dim=0)
 
 
-    #num_ftrs = model_ft.fc.in_features
-    #model_ft.fc = nn.Linear(num_ftrs, 512)
+        dataset_feature =  F.relu(self.c1(common_feature))
+        dataset_feature = F.normalize(dataset_feature, p=2, dim=0)
 
-    dd = .1
-    model_1 = multi_output_model(model_ft,dd)
-    model_1 = model_1.to(device)
-    print(model_1)
-    print(model_1.parameters())    
-    criterion = [nn.CrossEntropyLoss(),nn.CrossEntropyLoss(),nn.CrossEntropyLoss(),nn.CrossEntropyLoss(),nn.BCELoss()]
-'''
+        ## start hex projection
+        hex_feature = diseases_feature - torch.mm(torch.mm(torch.mm(dataset_feature, torch.inverse(torch.mm(dataset_feature.t(), dataset_feature))), dataset_feature.t()), diseases_feature)
+
+        # more linear layer
+        hex_feature = F.relu(self.fc(hex_feature))
+
+
+        # prepare logits following hex paper and github
+        y_dataset = self.y2(dataset_feature) # this gonna be supervised   N x 32 -> N x 2
+        y_disease = self.y1(hex_feature) # N x 1056 -> N x 5
+
+        y_raw = self.y1(diseases_feature)
+        
+        return y_disease, y_dataset, y_raw
+
 
 def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     """
@@ -388,7 +427,7 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     model = models.alexnet(pretrained=True)
     del model.classifier
     model.classifier = nn.Identity()
-    model_new = multi_output_model(model, dropout_ratio=0.2)
+    model_new = multi_output_model_v2(model, dropout_ratio=0.2)
     model_new.cuda()
     '''
         
@@ -416,7 +455,7 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     # define criterion, optimizer for training
     criterion1 = nn.BCEWithLogitsLoss()
     criterion2 = nn.CrossEntropyLoss()
-    '''
+    
     optimizer = optim.SGD(
         filter(
             lambda p: p.requires_grad,
@@ -424,14 +463,16 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
         lr=LR,
         momentum=0.9,
         weight_decay=WEIGHT_DECAY)
+    
+
     '''
     optimizer = optim.Adam(
         filter(
             lambda p: p.requires_grad,
             model_new.parameters()),
         lr=LR)
-        #momentum=0.9,
-        #weight_decay=WEIGHT_DECAY)
+    '''
+
     dataset_sizes = {x: len(transformed_datasets[x]) for x in ['train', 'val']}
 
     # train model

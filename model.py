@@ -292,32 +292,35 @@ class multi_output_model(torch.nn.Module):
 
 class multi_output_model_v2(torch.nn.Module):
     def __init__(self, model_core, dropout_ratio):
-        super(multi_output_model, self).__init__()
+        super(multi_output_model_v2, self).__init__()
         
         self.densenet_model = model_core
         self.num_dataset = 2
         
-        self.x1 =  nn.Linear(9216, 2048)
-        nn.init.xavier_normal_(self.x1.weight)
-        #self.bn2 = nn.BatchNorm1d(512, eps = 2e-1)
+        self.x1 =  nn.Linear(9216, 4096)
+        nn.init.kaiming_normal_(self.x1.weight)
 
-        self.x2 = nn.Linear(2048, 512)
-        nn.init.xavier_normal_(self.x2.weight)
+        self.x2 = nn.Linear(4096, 32)
+        nn.init.kaiming_normal_(self.x2.weight)
 
-        self.y1 = nn.Linear(512, 5)
-        nn.init.xavier_normal_(self.y1.weight)
+        self.y1 = nn.Linear(4096, 5)
+        nn.init.kaiming_normal_(self.y1.weight)
 
+        self.c1 =  nn.Linear(9216, 32)
+        nn.init.kaiming_normal_(self.c1.weight)
 
-        self.c1 =  nn.Linear(9216, 512)
-        nn.init.xavier_normal_(self.c1.weight)
+        self.y2 = nn.Linear(32, self.num_dataset)
+        nn.init.kaiming_normal_(self.y2.weight)
 
-        self.y2 = nn.Linear(512, self.num_dataset)
-        nn.init.xavier_normal_(self.y2.weight)
+        self.c2 = nn.Linear(32, 4096)
+        nn.init.kaiming_normal_(self.c2.weight)
 
-        self.fc = nn.Linear(512, 512)
-        nn.init.xavier_normal_(self.fc.weight)
+        self.fc = nn.Linear(4096, 4096)
+        nn.init.kaiming_normal_(self.fc.weight)
         
         self.d_out = nn.Dropout(dropout_ratio)
+
+        self.bn1 = nn.BatchNorm1d(4096, eps = 2e-1)
 
     def forward(self, x, phase):
 
@@ -327,19 +330,18 @@ class multi_output_model_v2(torch.nn.Module):
         common_feature = self.d_out(common_feature) 
 
         # l2-normalize as indicated in the paper
-        diseases_feature = F.relu(self.x2(F.relu(self.x1(common_feature)))) 
-        diseases_feature = F.normalize(diseases_feature, p=2, dim=0)
+        diseases_feature = F.leaky_relu(self.x1(common_feature))
+        proj_disease = F.leaky_relu(self.x2(diseases_feature))
+        proj_disease = F.normalize(proj_disease, p=2, dim=0)
 
-
-        dataset_feature =  F.relu(self.c1(common_feature))
+        dataset_feature =  F.leaky_relu(self.c1(common_feature))
         dataset_feature = F.normalize(dataset_feature, p=2, dim=0)
 
         ## start hex projection
-        hex_feature = diseases_feature - torch.mm(torch.mm(torch.mm(dataset_feature, torch.inverse(torch.mm(dataset_feature.t(), dataset_feature))), dataset_feature.t()), diseases_feature)
+        hex_feature = proj_disease - torch.mm(torch.mm(torch.mm(dataset_feature, torch.inverse(torch.mm(dataset_feature.t(), dataset_feature))), dataset_feature.t()), proj_disease)
 
         # more linear layer
-        hex_feature = F.relu(self.fc(hex_feature))
-
+        hex_feature = F.leaky_relu(self.bn1(self.c2(hex_feature) + diseases_feature))
 
         # prepare logits following hex paper and github
         y_dataset = self.y2(dataset_feature) # this gonna be supervised   N x 32 -> N x 2
@@ -347,7 +349,27 @@ class multi_output_model_v2(torch.nn.Module):
 
         y_raw = self.y1(diseases_feature)
         
-        return y_disease, y_dataset, y_raw
+        return y_disease, y_dataset, y_disease
+
+    '''
+    def forward(self, x, phase):
+        # prepare feature
+        common_feature = self.densenet_model(x)
+        # add dropout
+        common_feature = self.d_out(common_feature) 
+
+        diseases_feature = F.relu(self.x2(F.relu(self.x1(common_feature)))) 
+        dataset_feature =  F.relu(self.c1(common_feature))
+        se_feature = 1 - F.sigmoid(self.c2(dataset_feature))
+        hex_feature = F.relu(self.fc(diseases_feature * se_feature))
+
+        # prepare logits following hex paper and github
+        y_dataset = self.y2(dataset_feature) # this gonna be supervised   N x 32 -> N x 2
+        y_disease = self.y1(hex_feature) # N x 1056 -> N x 5
+        
+        return y_disease, y_dataset, y_disease
+    '''
+    
 
 
 def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
@@ -365,7 +387,7 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
 
     """
     NUM_EPOCHS = 100
-    BATCH_SIZE = 128
+    BATCH_SIZE = 256
 
     if not os.path.exists("results/"):
         os.makedirs("results/")
@@ -422,7 +444,8 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     if not use_gpu:
         raise ValueError("Error, requires GPU")
     
-    
+
+    '''
     #model = models.densenet121(pretrained=True)
     model = models.alexnet(pretrained=True)
     del model.classifier
@@ -430,26 +453,15 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     model_new = multi_output_model_v2(model, dropout_ratio=0.2)
     model_new.cuda()
     '''
-        
-    path_images = '/home/ben/Desktop/MIBLab/'
-    path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/checkpoint4'
-    checkpoint = torch.load(path_model, map_location=lambda storage, loc: storage)
-    model_new = checkpoint['model']
-    model_new.cuda()
-    del checkpoint
-    
-    torch.backends.cudnn.enabled = False
-    preds, aucs = E.make_pred_multilabel(
-    data_transforms, model_new, PATH_TO_IMAGES)
-    pdb.set_trace()
-    
 
-    path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/checkpoint4'
+    
+    path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/checkpoint8'
     checkpoint = torch.load(path_model, map_location=lambda storage, loc: storage)
     model_new = checkpoint['model']
     model_new.cuda()
     del checkpoint
-    '''
+    
+    
     
     
     # define criterion, optimizer for training

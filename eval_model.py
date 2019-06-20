@@ -78,15 +78,15 @@ def make_pred_multilabel(data_transforms, model, PATH_TO_IMAGES):
             #batch_size = true_labels.shape
 
             ### test
-            temp = model.densenet_model(inputs)
-            raw_pred = model.y2(torch.cat([model.x2(temp), torch.zeros(temp.shape[0], 32).cuda()], dim=1))
-            disease_pred = torch.zeros_like(raw_pred).cuda()
-            dataset_pred = torch.zeros(temp.shape[0], 2).cuda()
+            #temp = model.densenet_model(inputs)
+            #raw_pred = model.y2(torch.cat([model.x2(temp), torch.zeros(temp.shape[0], 32).cuda()], dim=1))
+            #disease_pred = torch.zeros_like(raw_pred).cuda()
+            #dataset_pred = torch.zeros(temp.shape[0], 2).cuda()
             #pdb.set_trace()
 
-            #disease_pred, dataset_pred, raw_pred = model.forward(inputs, "val")
-            #disease_pred = torch.sigmoid(disease_pred)
-            disease_pred = torch.sigmoid(raw_pred)
+            disease_pred, dataset_pred, raw_pred = model.forward(inputs, "val")
+            disease_pred = torch.sigmoid(disease_pred)
+            #disease_pred = torch.sigmoid(raw_pred)
 
             probs = disease_pred.cpu().data.numpy()
             acc += torch.sum(dataset_pred.argmax(dim=1)==label_dataset)

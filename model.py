@@ -285,7 +285,7 @@ class multi_output_model(torch.nn.Module):
         # to project
         y_hex = y_disease -  torch.mm(torch.mm(torch.mm(y_padded, torch.inverse(torch.mm(y_padded.t(), y_padded))), y_padded.t()), y_disease)
         
-        return y_hex, y_dataset, y_raw
+        return y_hex, y_dataset, y_ra
 
 
 # there can also be a v3 where we design a similar SE block!!! good!
@@ -370,6 +370,71 @@ class multi_output_model_v2(torch.nn.Module):
         return y_disease, y_dataset, y_disease
     '''
     
+class multi_output_model_v3(torch.nn.Module):
+    def __init__(self, model_core, dropout_ratio):
+        super(multi_output_model_v3, self).__init__()
+        
+        self.densenet_model = model_core
+        self.num_dataset = 2
+        
+        self.x1 =  nn.Linear(9216, 4096)
+        nn.init.kaiming_normal_(self.x1.weight)
+
+        self.x2 = nn.Linear(4096, 4096)
+        nn.init.kaiming_normal_(self.x2.weight)
+
+        self.x3 = nn.Linear(4096, 32)
+        nn.init.kaiming_normal_(self.x3.weight)
+
+        self.y1 = nn.Linear(4096, 5)
+        nn.init.kaiming_normal_(self.y1.weight)
+
+        self.c1 =  nn.Linear(9216, 32)
+        nn.init.kaiming_normal_(self.c1.weight)
+
+        self.y2 = nn.Linear(32, self.num_dataset)
+        nn.init.kaiming_normal_(self.y2.weight)
+
+        self.fc = nn.Linear(32, 4096)
+        nn.init.kaiming_normal_(self.fc.weight)
+        
+        self.d_out = nn.Dropout(dropout_ratio)
+
+        #self.bn1 = nn.BatchNorm1d(512, eps = 2e-1)
+
+    def forward(self, x, phase):
+
+        # prepare feature
+        common_feature = self.densenet_model(x)
+        # add dropout
+        common_feature = self.d_out(common_feature) 
+
+        # l2-normalize as indicated in the paper
+        diseases_feature = F.leaky_relu(self.x1(common_feature))
+        diseases_feature = F.leaky_relu(self.x2(diseases_feature))
+        proj_disease = F.leaky_relu(self.x3(diseases_feature))
+
+        dataset_feature =  F.leaky_relu(self.c1(common_feature))
+        dataset_feature = F.normalize(dataset_feature, p=2, dim=0)
+
+        F_a = F.normalize(proj_disease, p=2, dim=0)
+        F_g = dataset_feature
+        #F_p = self.fc(torch.cat([diseases_feature, torch.zeros_like(dataset_feature)], 1)) 
+
+        ## start hex projection
+        F_l = F_a - torch.mm(torch.mm(torch.mm(F_g, torch.inverse(torch.mm(F_g.t(), F_g))), F_g.t()), F_a)
+
+        # more linear layer
+        #F_l = F.sigmoid(self.fc(F_l)) * diseases_feature
+        F_l = F.leaky_relu(self.fc(F_l))
+
+        # prepare logits following hex paper and github
+        y_dataset = self.y2(dataset_feature) # this gonna be supervised   N x 32 -> N x 2
+        y_disease = self.y1(F_l) # N x 1056 -> N x 5
+
+        #y_raw = self.y1(F_p)
+        
+        return y_disease, y_dataset, y_disease
 
 
 def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
@@ -445,22 +510,22 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
         raise ValueError("Error, requires GPU")
     
 
-    '''
+    
     #model = models.densenet121(pretrained=True)
     model = models.alexnet(pretrained=True)
     del model.classifier
     model.classifier = nn.Identity()
-    model_new = multi_output_model_v2(model, dropout_ratio=0.2)
+    model_new = multi_output_model_v3(model, dropout_ratio=0.2)
     model_new.cuda()
-    '''
-
     
+
+    '''
     path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/checkpoint8'
     checkpoint = torch.load(path_model, map_location=lambda storage, loc: storage)
     model_new = checkpoint['model']
     model_new.cuda()
     del checkpoint
-    
+    '''
     
     
     

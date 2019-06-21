@@ -128,23 +128,21 @@ def train_model(
 
             # iterate over all data in train/val dataloader:
             for data in dataloaders[phase]:
-                p = float(i + epoch * len(dataloaders[phase])) / num_epochs / len(dataloaders[phase])
-                alpha =  2. / (1. + np.exp(-10 * p)) - 1
 
                 i += 1
                 inputs, label_disease, label_dataset, _ = data
-                label_dataset = label_dataset.to(dtype=torch.int64)
-                label_dataset = label_dataset.reshape(-1)
+                #label_dataset = label_dataset.to(dtype=torch.int64)
+                #label_dataset = label_dataset.reshape(-1)
                 batch_size = inputs.shape[0]
                 inputs = Variable(inputs.cuda())
                 label_disease = Variable(label_disease.cuda()).float()
-                label_dataset = Variable(label_dataset.cuda())
+                label_dataset = Variable(label_dataset.cuda()).float()
 
                 if phase=='train':
-                    class_out, domain_out = model.forward(inputs, alpha)
+                    class_out, domain_out = model.forward(inputs)
                 else:
                     with torch.no_grad():
-                        class_out, domain_out = model.forward(inputs, alpha)
+                        class_out, domain_out = model.forward(inputs)
 
                 if phase == 'train':
                     # calculate gradient and update parameters in train phase
@@ -167,11 +165,12 @@ def train_model(
 
                 running_loss1 += loss1.data * batch_size
                 running_loss2 += loss2.data * batch_size
-                running_acc2 += torch.sum(domain_out.argmax(dim=1) == label_dataset)
+                temp = (torch.sigmoid(domain_out)).cpu().data.numpy()
+                running_acc2 += np.sum(np.uint8(temp>0.5)== label_dataset)
 
             epoch_loss1 = running_loss1 / dataset_sizes[phase]
             epoch_loss2 = running_loss2 / dataset_sizes[phase]
-            epoch_accuracy = running_acc2.to(dtype=torch.float32) / dataset_sizes[phase]
+            epoch_accuracy = running_acc2 / dataset_sizes[phase]
             if phase == 'train':
                 last_train_loss = epoch_loss1
             else:
@@ -307,7 +306,7 @@ class multi_output_model(torch.nn.Module):
         self.class_classifier_head = nn.Linear(4096, 5)
         self.domain_classifier_head = nn.Linear(100, 1)
 
-    def forward(self, x, alpha):
+    def forward(self, x):
         # prepare feature
         common_feature = self.d_out(self.densenet_model(x))
         class_feature = self.class_classifier(common_feature)

@@ -102,7 +102,7 @@ def train_model(
     """
     since = time.time()
     num_epochs = 200
-    start_epoch = 1
+    start_epoch = 100
     best_loss = 999999
     best_epoch = -1
     last_train_loss = -1
@@ -134,6 +134,7 @@ def train_model(
             for data in dataloaders[phase]:
                 p = float(i + epoch * len(dataloaders[phase])) / num_epochs / len(dataloaders[phase])
                 alpha =  (2. / (1. + np.exp(-10 * p)) - 1) #/ epoch
+                alpha = 0
 
                 i += 1
                 inputs, label_disease, label_dataset, _ = data
@@ -343,23 +344,24 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     if not use_gpu:
         raise ValueError("Error, requires GPU")
     
-    
+    '''
     model = models.alexnet(pretrained=True)
     del model.classifier
     model.classifier = nn.Identity()
     model_new = multi_output_model(model, dropout_ratio=0.2)
     model_new.cuda()
+    '''
     
     
 
-    '''
+    
     path_images = '/home/ben/Desktop/MIBLab/'
-    path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/checkpoint92'
+    path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/checkpoint100'
     checkpoint = torch.load(path_model, map_location=lambda storage, loc: storage)
     model_new = checkpoint['model']
     model_new.cuda()
     del checkpoint
-    '''
+    
     
 
     '''

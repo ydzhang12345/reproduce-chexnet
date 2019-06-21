@@ -5,12 +5,13 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.optim import lr_scheduler
-from torch.autograd import Variable
+from torch.autograd import Variable, Function
 import torchvision
 from torchvision import datasets, models, transforms
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms, utils
 import torch.nn.functional as F
+from neural_estimation import MINE
 
 # image imports
 from skimage import io, transform
@@ -36,10 +37,20 @@ gpu_count = torch.cuda.device_count()
 print("Available GPU count:" + str(gpu_count))
 
 
+class ReverseLayerF(Function):
+    @staticmethod
+    def forward(ctx, x, alpha):
+        ctx.alpha = alpha
+        return x.view_as(x)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        output = grad_output.neg() * ctx.alpha
+        return output, None
+
 def checkpoint(model, best_loss, epoch, LR):
     """
     Saves checkpoint of torchvision model during training.
-
     Args:
         model: torchvision model to be saved
         best_loss: best val loss achieved so far in training
@@ -57,7 +68,6 @@ def checkpoint(model, best_loss, epoch, LR):
         'rng_state': torch.get_rng_state(),
         'LR': LR
     }
-
     torch.save(state, 'results/checkpoint' + str(epoch))
 
 
@@ -73,7 +83,6 @@ def train_model(
         weight_decay):
     """
     Fine tunes torchvision model to NIH CXR data.
-
     Args:
         model: torchvision model to be finetuned (densenet-121 in this case)
         criterion: loss criterion (binary cross entropy loss, BCELoss)
@@ -86,17 +95,16 @@ def train_model(
     Returns:
         model: trained torchvision model
         best_epoch: epoch on which best model val loss was obtained
-
     """
     since = time.time()
+    num_epochs = 100
 
-    start_epoch = 1
     best_loss = 999999
     best_epoch = -1
     last_train_loss = -1
 
     # iterate over epochs
-    for epoch in range(start_epoch, num_epochs + 1):
+    for epoch in range(1, num_epochs):
         print('Epoch {}/{}'.format(epoch, num_epochs))
         print('-' * 10)
 
@@ -120,56 +128,46 @@ def train_model(
 
             # iterate over all data in train/val dataloader:
             for data in dataloaders[phase]:
+                p = float(i + epoch * len(dataloaders[phase])) / num_epochs / len(dataloaders[phase])
+                alpha =  2. / (1. + np.exp(-10 * p)) - 1
+
                 i += 1
                 inputs, label_disease, label_dataset, _ = data
-                #label_disease = label_disease.to(dtype=torch.int64)
                 label_dataset = label_dataset.to(dtype=torch.int64)
-                #label_disease = label_disease.reshape(-1)
                 label_dataset = label_dataset.reshape(-1)
-                #labels = labels.reshape(-1)
                 batch_size = inputs.shape[0]
                 inputs = Variable(inputs.cuda())
                 label_disease = Variable(label_disease.cuda()).float()
                 label_dataset = Variable(label_dataset.cuda())
-                #labels = Variable(labels.cuda())
 
                 if phase=='train':
-                    pred_disease, pred_dataset, pred_raw = model.forward(inputs, phase)
+                    class_out, domain_out = model.forward(inputs, alpha)
                 else:
                     with torch.no_grad():
-                        pred_disease, pred_dataset, pred_raw = model.forward(inputs, phase)
-
+                        class_out, domain_out = model.forward(inputs, alpha)
 
                 if phase == 'train':
                     # calculate gradient and update parameters in train phase
                     optimizer.zero_grad()
-                    loss1 = criterion1(pred_disease, label_disease)
-                    loss2 = criterion2(pred_dataset, label_dataset)
-                    print(loss1, "*****", loss2)
+                    loss1 = criterion1(class_out, label_disease)
+                    loss2 = criterion2(domain_out, label_dataset)
                     loss = loss1 + loss2
+                    #print(loss1, '***', loss2)
                     loss.backward()
                     optimizer.step()
                 else:
                     optimizer.zero_grad()
-                    loss1 = criterion1(pred_raw, label_disease)
-                    loss2 = criterion2(pred_dataset, label_dataset)
-                    #print(loss1, "*****", loss2)
+                    loss1 = criterion1(class_out, label_disease)
+                    loss2 = criterion2(domain_out, label_dataset)
                     loss = loss1 + loss2
 
-                    #probs = (torch.sigmoid(pred_disease)).cpu().data.numpy()
-                    probs = (torch.sigmoid(pred_raw)).cpu().data.numpy()
+                    probs = (torch.sigmoid(class_out)).cpu().data.numpy()
                     label_disease = label_disease.cpu().data.numpy()
                     total_acc += np.sum(np.uint8(probs>0.5)==label_disease)
 
-                    probs_raw = (torch.sigmoid(pred_raw)).cpu().data.numpy()
-                    total_acc_raw += np.sum(np.uint8(probs_raw>0.5)==label_disease)
-
-
                 running_loss1 += loss1.data * batch_size
                 running_loss2 += loss2.data * batch_size
-                running_acc2 += torch.sum(pred_dataset.argmax(dim=1) == label_dataset)
-                #if i > 100:
-                #    break
+                running_acc2 += torch.sum(domain_out.argmax(dim=1) == label_dataset)
 
             epoch_loss1 = running_loss1 / dataset_sizes[phase]
             epoch_loss2 = running_loss2 / dataset_sizes[phase]
@@ -177,12 +175,14 @@ def train_model(
             if phase == 'train':
                 last_train_loss = epoch_loss1
             else:
-                print("total_acc: ", total_acc, "total_acc_raw: ", total_acc_raw)
+                print("total_acc: ", total_acc)
 
             print(phase + ' epoch {}:loss1 {:.4f}, loss2 {:.4f}, acc {:.4f} with data size {}'.format(
                 epoch, epoch_loss1, epoch_loss2, epoch_accuracy, dataset_sizes[phase]))
 
+            
             # decay learning rate if no val loss improvement in this epoch
+            '''
             if phase == 'val' and epoch_loss1 > best_loss:
                 print("decay loss from " + str(LR) + " to " +
                       str(LR / 10) + " as not seeing improvement in val loss")
@@ -196,9 +196,11 @@ def train_model(
                     momentum=0.9,
                     weight_decay=weight_decay)
                 print("created new optimizer with LR " + str(LR))
-
+            '''
+            
+            
             # checkpoint model if has best val loss yet
-            if phase == 'val' and epoch_loss1 < best_loss:
+            if phase == 'val': #and epoch_loss1 < best_loss:
                 best_loss = epoch_loss1
                 best_epoch = epoch
                 checkpoint(model, best_loss, epoch, LR)
@@ -214,11 +216,14 @@ def train_model(
         total_done += batch_size
         if(total_done % (100 * batch_size) == 0):
             print("completed " + str(total_done) + " so far in epoch")
+
+        '''
         # break if no val loss improvement in 3 epochs
         if ((epoch - best_epoch) >= 3):
             print("no improvement in 3 epochs, break")
             break
         #break
+        '''
 
     time_elapsed = time.time() - since
     print('Training complete in {:.0f}m {:.0f}s'.format(
@@ -231,141 +236,106 @@ def train_model(
     return model, best_epoch
 
 
+class Mine(nn.Module):
+    def __init__(self, input_size=2, hidden_size=100):
+        super().__init__()
+        self.fc1 = nn.Linear(input_size, hidden_size)
+        self.fc2 = nn.Linear(hidden_size, hidden_size)
+        self.fc3 = nn.Linear(hidden_size, 1)
+        nn.init.normal_(self.fc1.weight,std=0.02)
+        nn.init.constant_(self.fc1.bias, 0)
+        nn.init.normal_(self.fc2.weight,std=0.02)
+        nn.init.constant_(self.fc2.bias, 0)
+        nn.init.normal_(self.fc3.weight,std=0.02)
+        nn.init.constant_(self.fc3.bias, 0)
+        
+    def forward(self, input):
+        output = F.elu(self.fc1(input))
+        output = F.elu(self.fc2(output))
+        output = self.fc3(output)
+        return output
+
+
+def mutual_information(joint, marginal, mine_net):
+    t = mine_net(joint)
+    et = torch.exp(mine_net(marginal))
+    mi_lb = torch.mean(t) - torch.log(torch.mean(et))
+    return mi_lb, t, et
+
+def learn_mine(batch, mine_net, mine_net_optim,  ma_et, ma_rate=0.01):
+    # batch is a tuple of (joint, marginal)
+    joint , marginal = batch
+    joint = torch.autograd.Variable(torch.FloatTensor(joint)).cuda()
+    marginal = torch.autograd.Variable(torch.FloatTensor(marginal)).cuda()
+    mi_lb , t, et = mutual_information(joint, marginal, mine_net)
+    ma_et = (1-ma_rate)*ma_et + ma_rate*torch.mean(et)
+    
+    # unbiasing use moving average
+    loss = -(torch.mean(t) - (1/ma_et.mean()).detach()*torch.mean(et))
+    # use biased estimator
+#     loss = - mi_lb
+    
+    mine_net_optim.zero_grad()
+    autograd.backward(loss)
+    mine_net_optim.step()
+    return mi_lb, ma_et
+
 
 class multi_output_model(torch.nn.Module):
     def __init__(self, model_core, dropout_ratio):
         super(multi_output_model, self).__init__()
         
         self.densenet_model = model_core
-        self.num_dataset = 2
 
-        #https://blog.csdn.net/Geek_of_CSDN/article/details/90179421
-        
-        self.x1 =  nn.Linear(9216, 32)
-        nn.init.xavier_normal_(self.x1.weight)
-        #self.bn1 = nn.BatchNorm1d(64,eps = 2e-1)
-        
-        self.x2 =  nn.Linear(9216, 4096)
-        nn.init.xavier_normal_(self.x2.weight)
-        #self.bn2 = nn.BatchNorm1d(512, eps = 2e-1)
+        self.class_classifier = nn.Sequential()
+        self.class_classifier.add_module('c_fc1', nn.Linear(9216, 4096))
+        self.class_classifier.add_module('c_bn1', nn.BatchNorm1d(4096))
+        self.class_classifier.add_module('c_relu1', nn.ReLU(True))
+        self.class_classifier.add_module('c_drop1', nn.Dropout2d())
+        self.class_classifier.add_module('c_fc2', nn.Linear(4096, 4096))
+        self.class_classifier.add_module('c_bn2', nn.BatchNorm1d(4096))
+        self.class_classifier.add_module('c_relu2', nn.ReLU(True))
+        #self.class_classifier.add_module('c_fc3', nn.Linear(4096, 5))
 
-        self.x3 = nn.Linear(4096, 4096)
-        nn.init.xavier_normal_(self.x3.weight)
+        self.domain_classifier = nn.Sequential()
+        self.domain_classifier.add_module('d_fc1', nn.Linear(9216, 100))
+        self.domain_classifier.add_module('d_bn1', nn.BatchNorm1d(100))
+        self.domain_classifier.add_module('d_relu1', nn.ReLU(True))
+        #self.domain_classifier.add_module('d_fc2', nn.Linear(100, 1))
+        self.d_out = nn.Dropout(0.2)
 
-        #heads
-        self.y1 = nn.Linear(32, self.num_dataset)
-        nn.init.xavier_normal_(self.y1.weight)
+        self.class_classifier_head = nn.Linear(4096, 5)
+        self.domain_classifier_head = nn.Linear(100, 1)
 
-        self.y2 = nn.Linear(4096 + 32, 5)
-        nn.init.xavier_normal_(self.y2.weight)
-        
-        self.d_out = nn.Dropout(dropout_ratio)
-
-    def forward(self, x, phase):
-
+    def forward(self, x, alpha):
         # prepare feature
-        # l2-normalize as indicated in the paper
-        common_feature = self.densenet_model(x)
-        common_feature = self.d_out(common_feature)
-        # add dropout 
+        common_feature = self.d_out(self.densenet_model(x))
+        class_feature = self.class_classifier(common_feature)
+        domain_feature = self.domain_classifier(common_feature)
 
-        dataset_feature =  F.relu(self.x1(common_feature)) # of 32
-        dataset_feature = F.normalize(dataset_feature, p=2, dim=0)
+        # calculate mutual information
+        pdb.set_trace()
+        mutual_info = MINE(class_feature, domain_feature)
 
-        diseases_feature = F.relu(self.x3(F.relu(self.x2(common_feature)))) # of 1024
-        diseases_feature = F.normalize(diseases_feature, p=2, dim=0)
+        class_output = self.class_classifier_head(class_feature)
+        domain_output = self.domain_classifier(domain_feature)
+        return class_output, domain_output
 
-        ## start hex projection
-        # prepare logits following hex paper and github
-        y_dataset = self.y1(dataset_feature) # this gonna be supervised   N x 32 -> N x 2
-        y_disease = self.y2(torch.cat([diseases_feature, dataset_feature], 1)) # N x 1056 -> N x 5
-        y_padded = self.y2(torch.cat([torch.zeros_like(diseases_feature), dataset_feature], 1))
-        y_raw = self.y2(torch.cat([diseases_feature, torch.zeros_like(dataset_feature)], 1))
-
-        # to project
-        y_hex = y_disease -  torch.mm(torch.mm(torch.mm(y_padded, torch.inverse(torch.mm(y_padded.t(), y_padded))), y_padded.t()), y_disease)
-        
-        return y_hex, y_dataset, y_raw
-
-
-# there can also be a v3 where we design a similar SE block!!! good!
-
-class multi_output_model_v2(torch.nn.Module):
-    def __init__(self, model_core, dropout_ratio):
-        super(multi_output_model, self).__init__()
-        
-        self.densenet_model = model_core
-        self.num_dataset = 2
-        
-        self.x1 =  nn.Linear(9216, 2048)
-        nn.init.xavier_normal_(self.x1.weight)
-        #self.bn2 = nn.BatchNorm1d(512, eps = 2e-1)
-
-        self.x2 = nn.Linear(2048, 512)
-        nn.init.xavier_normal_(self.x2.weight)
-
-        self.y1 = nn.Linear(512, 5)
-        nn.init.xavier_normal_(self.y1.weight)
-
-
-        self.c1 =  nn.Linear(9216, 512)
-        nn.init.xavier_normal_(self.c1.weight)
-
-        self.y2 = nn.Linear(512, self.num_dataset)
-        nn.init.xavier_normal_(self.y2.weight)
-
-        self.fc = nn.Linear(512, 512)
-        nn.init.xavier_normal_(self.fc.weight)
-        
-        self.d_out = nn.Dropout(dropout_ratio)
-
-    def forward(self, x, phase):
-
-        # prepare feature
-        common_feature = self.densenet_model(x)
-        # add dropout
-        common_feature = self.d_out(common_feature) 
-
-        # l2-normalize as indicated in the paper
-        diseases_feature = F.relu(self.x2(F.relu(self.x1(common_feature)))) 
-        diseases_feature = F.normalize(diseases_feature, p=2, dim=0)
-
-
-        dataset_feature =  F.relu(self.c1(common_feature))
-        dataset_feature = F.normalize(dataset_feature, p=2, dim=0)
-
-        ## start hex projection
-        hex_feature = diseases_feature - torch.mm(torch.mm(torch.mm(dataset_feature, torch.inverse(torch.mm(dataset_feature.t(), dataset_feature))), dataset_feature.t()), diseases_feature)
-
-        # more linear layer
-        hex_feature = F.relu(self.fc(hex_feature))
-
-
-        # prepare logits following hex paper and github
-        y_dataset = self.y2(dataset_feature) # this gonna be supervised   N x 32 -> N x 2
-        y_disease = self.y1(hex_feature) # N x 1056 -> N x 5
-
-        y_raw = self.y1(diseases_feature)
-        
-        return y_disease, y_dataset, y_raw
 
 
 def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     """
     Train torchvision model to NIH data given high level hyperparameters.
-
     Args:
         PATH_TO_IMAGES: path to NIH images
         LR: learning rate
         WEIGHT_DECAY: weight decay parameter for SGD
-
     Returns:
         preds: torchvision model predictions on test fold with ground truth for comparison
         aucs: AUCs for each train,test tuple
-
     """
     NUM_EPOCHS = 100
-    BATCH_SIZE = 128
+    BATCH_SIZE = 1024
 
     if not os.path.exists("results/"):
         os.makedirs("results/")
@@ -373,9 +343,6 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     # use imagenet mean,std for normalization
     mean = [0.485, 0.456, 0.406]
     std = [0.229, 0.224, 0.225]
-
-    # load labels
-    df = pd.read_csv("sampled_cheX_mimic.csv", index_col=0)
 
     # define torchvision transforms
     data_transforms = {
@@ -423,27 +390,29 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
         raise ValueError("Error, requires GPU")
     
     
-    #model = models.densenet121(pretrained=True)
     model = models.alexnet(pretrained=True)
     del model.classifier
     model.classifier = nn.Identity()
-    model_new = multi_output_model_v2(model, dropout_ratio=0.2)
+    model_new = multi_output_model(model, dropout_ratio=0.2)
     model_new.cuda()
-    '''
-        
+    
+
+    '''  
     path_images = '/home/ben/Desktop/MIBLab/'
-    path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/checkpoint4'
+    path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/checkpoint9'
     checkpoint = torch.load(path_model, map_location=lambda storage, loc: storage)
     model_new = checkpoint['model']
     model_new.cuda()
     del checkpoint
+    '''
+
+    '''
     
     torch.backends.cudnn.enabled = False
     preds, aucs = E.make_pred_multilabel(
     data_transforms, model_new, PATH_TO_IMAGES)
     pdb.set_trace()
     
-
     path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/checkpoint4'
     checkpoint = torch.load(path_model, map_location=lambda storage, loc: storage)
     model_new = checkpoint['model']
@@ -454,7 +423,7 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     
     # define criterion, optimizer for training
     criterion1 = nn.BCEWithLogitsLoss()
-    criterion2 = nn.CrossEntropyLoss()
+    criterion2 = nn.BCEWithLogitsLoss()
     
     optimizer = optim.SGD(
         filter(
@@ -464,15 +433,6 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
         momentum=0.9,
         weight_decay=WEIGHT_DECAY)
     
-
-    '''
-    optimizer = optim.Adam(
-        filter(
-            lambda p: p.requires_grad,
-            model_new.parameters()),
-        lr=LR)
-    '''
-
     dataset_sizes = {x: len(transformed_datasets[x]) for x in ['train', 'val']}
 
     # train model
@@ -485,4 +445,4 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     preds, aucs = E.make_pred_multilabel(
         data_transforms, model, PATH_TO_IMAGES)
     
-    return preds, aucs
+return preds, aucs

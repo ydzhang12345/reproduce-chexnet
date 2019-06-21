@@ -101,14 +101,14 @@ def train_model(
 
     """
     since = time.time()
-    num_epochs = 100
-
+    num_epochs = 200
+    start_epoch = 1
     best_loss = 999999
     best_epoch = -1
     last_train_loss = -1
 
     # iterate over epochs
-    for epoch in range(1, num_epochs):
+    for epoch in range(start_epoch, num_epochs):
         print('Epoch {}/{}'.format(epoch, num_epochs))
         print('-' * 10)
 
@@ -133,16 +133,17 @@ def train_model(
             # iterate over all data in train/val dataloader:
             for data in dataloaders[phase]:
                 p = float(i + epoch * len(dataloaders[phase])) / num_epochs / len(dataloaders[phase])
-                alpha =  2. / (1. + np.exp(-10 * p)) - 1
+                alpha =  (2. / (1. + np.exp(-10 * p)) - 1) #/ epoch
 
                 i += 1
                 inputs, label_disease, label_dataset, _ = data
-                label_dataset = label_dataset.to(dtype=torch.int64)
-                label_dataset = label_dataset.reshape(-1)
+                #pdb.set_trace()
+                #label_dataset = label_dataset.to(dtype=torch.int64)
+                #label_dataset = label_dataset.reshape(-1)
                 batch_size = inputs.shape[0]
                 inputs = Variable(inputs.cuda())
                 label_disease = Variable(label_disease.cuda()).float()
-                label_dataset = Variable(label_dataset.cuda())
+                label_dataset = Variable(label_dataset.cuda()).float()
 
                 if phase=='train':
                     class_out, domain_out = model.forward(inputs, alpha)
@@ -156,7 +157,7 @@ def train_model(
                     loss1 = criterion1(class_out, label_disease)
                     loss2 = criterion2(domain_out, label_dataset)
                     loss = loss1 + loss2
-                    #print(loss1, '***', loss2)
+                    print(loss1, '***', loss2)
                     loss.backward()
                     optimizer.step()
                 else:
@@ -171,11 +172,11 @@ def train_model(
 
                 running_loss1 += loss1.data * batch_size
                 running_loss2 += loss2.data * batch_size
-                running_acc2 += torch.sum(domain_out.argmax(dim=1) == label_dataset)
+                running_acc2 += 0 #torch.sum(domain_out.argmax(dim=1) == label_dataset)
 
             epoch_loss1 = running_loss1 / dataset_sizes[phase]
             epoch_loss2 = running_loss2 / dataset_sizes[phase]
-            epoch_accuracy = running_acc2.to(dtype=torch.float32) / dataset_sizes[phase]
+            epoch_accuracy = 0#running_acc2.to(dtype=torch.float32) / dataset_sizes[phase]
             if phase == 'train':
                 last_train_loss = epoch_loss1
             else:
@@ -202,9 +203,8 @@ def train_model(
                 print("created new optimizer with LR " + str(LR))
             '''
             
-            
             # checkpoint model if has best val loss yet
-            if phase == 'val' and epoch_loss1 < best_loss:
+            if phase == 'val': #and epoch_loss1 < best_loss:
                 best_loss = epoch_loss1
                 best_epoch = epoch
                 checkpoint(model, best_loss, epoch, LR)
@@ -220,10 +220,13 @@ def train_model(
         total_done += batch_size
         if(total_done % (100 * batch_size) == 0):
             print("completed " + str(total_done) + " so far in epoch")
+
+        '''
         # break if no val loss improvement in 3 epochs
         if ((epoch - best_epoch) >= 3):
             print("no improvement in 3 epochs, break")
             break
+        '''
         #break
 
     time_elapsed = time.time() - since
@@ -245,20 +248,20 @@ class multi_output_model(torch.nn.Module):
         self.densenet_model = model_core
 
         self.class_classifier = nn.Sequential()
-        self.class_classifier.add_module('c_fc1', nn.Linear(1024, 1024))
-        #self.class_classifier.add_module('c_bn1', nn.BatchNorm1d(1024))
+        self.class_classifier.add_module('c_fc1', nn.Linear(9216, 4096))
+        self.class_classifier.add_module('c_bn1', nn.BatchNorm1d(4096))
         self.class_classifier.add_module('c_relu1', nn.ReLU(True))
-        #self.class_classifier.add_module('c_drop1', nn.Dropout2d())
-        #self.class_classifier.add_module('c_fc2', nn.Linear(1024, 1024))
-        #self.class_classifier.add_module('c_bn2', nn.BatchNorm1d(1024))
-        #self.class_classifier.add_module('c_relu2', nn.ReLU(True))
-        self.class_classifier.add_module('c_fc3', nn.Linear(1024, 5))
+        self.class_classifier.add_module('c_drop1', nn.Dropout2d())
+        self.class_classifier.add_module('c_fc2', nn.Linear(4096, 4096))
+        self.class_classifier.add_module('c_bn2', nn.BatchNorm1d(4096))
+        self.class_classifier.add_module('c_relu2', nn.ReLU(True))
+        self.class_classifier.add_module('c_fc3', nn.Linear(4096, 5))
 
         self.domain_classifier = nn.Sequential()
-        self.domain_classifier.add_module('d_fc1', nn.Linear(1024, 32))
-        #self.domain_classifier.add_module('d_bn1', nn.BatchNorm1d(32))
+        self.domain_classifier.add_module('d_fc1', nn.Linear(9216, 100))
+        self.domain_classifier.add_module('d_bn1', nn.BatchNorm1d(100))
         self.domain_classifier.add_module('d_relu1', nn.ReLU(True))
-        self.domain_classifier.add_module('d_fc2', nn.Linear(32, 2))
+        self.domain_classifier.add_module('d_fc2', nn.Linear(100, 1))
         self.d_out = nn.Dropout(0.2)
 
     def forward(self, x, alpha):
@@ -286,7 +289,7 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
 
     """
     NUM_EPOCHS = 100
-    BATCH_SIZE = 50
+    BATCH_SIZE = 256
 
     if not os.path.exists("results/"):
         os.makedirs("results/")
@@ -341,21 +344,23 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
         raise ValueError("Error, requires GPU")
     
     
-    model = models.densenet121(pretrained=True)
+    model = models.alexnet(pretrained=True)
     del model.classifier
     model.classifier = nn.Identity()
     model_new = multi_output_model(model, dropout_ratio=0.2)
     model_new.cuda()
     
+    
 
-    '''  
+    '''
     path_images = '/home/ben/Desktop/MIBLab/'
-    path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/checkpoint9'
+    path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/checkpoint92'
     checkpoint = torch.load(path_model, map_location=lambda storage, loc: storage)
     model_new = checkpoint['model']
     model_new.cuda()
     del checkpoint
     '''
+    
 
     '''
     
@@ -375,7 +380,8 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     
     # define criterion, optimizer for training
     criterion1 = nn.BCEWithLogitsLoss()
-    criterion2 = nn.CrossEntropyLoss()
+    #criterion2 = nn.CrossEntropyLoss()
+    criterion2 = nn.BCEWithLogitsLoss()
     
     optimizer = optim.SGD(
         filter(

@@ -7,6 +7,6 @@ import model as M
 # NIH images
 PATH_TO_IMAGES = "/home/ben/Desktop/MIBLab/"
 WEIGHT_DECAY = 1e-4
-LEARNING_RATE = 1e-4
+LEARNING_RATE = 3e-4
 preds, aucs = M.train_cnn(PATH_TO_IMAGES, LEARNING_RATE, WEIGHT_DECAY)
 

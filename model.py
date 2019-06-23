@@ -35,6 +35,14 @@ use_gpu = torch.cuda.is_available()
 gpu_count = torch.cuda.device_count()
 print("Available GPU count:" + str(gpu_count))
 
+def setup_seed(seed):
+     torch.manual_seed(seed)
+     torch.cuda.manual_seed_all(seed)
+     np.random.seed(seed)
+     torch.backends.cudnn.deterministic = True
+
+setup_seed(2019)
+
 
 def checkpoint(model, best_loss, epoch, LR):
     """
@@ -231,10 +239,65 @@ def train_model(
     return model, best_epoch
 
 
+class singleHex(torch.nn.Module):
+    def __init__(self, model_core, dropout_ratio, num_dataset=2, num_disease=5):
+        super(singleHex, self).__init__()
+        
+        self.common_feature = model_core
+        self.num_dataset = num_dataset
+        self.num_disease = num_disease
+        
+        self.x1 =  nn.Linear(9216, 32)
+        nn.init.xavier_normal_(self.x1.weight)
+        #self.bn1 = nn.BatchNorm1d(64,eps = 2e-1)
+        
+        self.x2 =  nn.Linear(9216, 4096)
+        nn.init.xavier_normal_(self.x2.weight)
+        #self.bn2 = nn.BatchNorm1d(512, eps = 2e-1)
 
-class multi_output_model(torch.nn.Module):
+        self.x3 = nn.Linear(4096, 4096)
+        nn.init.xavier_normal_(self.x3.weight)
+
+        #heads
+        self.y1 = nn.Linear(32, self.num_dataset)
+        nn.init.xavier_normal_(self.y1.weight)
+
+        self.y2 = nn.Linear(4096 + 32, 5)
+        nn.init.xavier_normal_(self.y2.weight)
+        
+        self.d_out = nn.Dropout(dropout_ratio)
+
+    def forward(self, x, phase):
+
+        # prepare feature
+        # l2-normalize as indicated in the paper
+        common_feature = self.common_feature(x)
+        common_feature = self.d_out(common_feature)
+        # add dropout 
+
+        dataset_feature =  F.relu(self.x1(common_feature)) # of 32
+        dataset_feature = F.normalize(dataset_feature, p=2, dim=0)
+
+        diseases_feature = F.relu(self.x3(F.relu(self.x2(common_feature)))) # of 1024
+        diseases_feature = F.normalize(diseases_feature, p=2, dim=0)
+
+        ## start hex projection
+        # prepare logits following hex paper and github
+        y_dataset = self.y1(dataset_feature) # this gonna be supervised   N x 32 -> N x 2
+        y_disease = self.y2(torch.cat([diseases_feature, dataset_feature], 1)) # N x 1056 -> N x 5
+        y_padded = self.y2(torch.cat([torch.zeros_like(diseases_feature), dataset_feature], 1))
+        y_raw = self.y2(torch.cat([diseases_feature, torch.zeros_like(dataset_feature)], 1))
+
+        # to project
+        y_hex = y_disease -  torch.mm(torch.mm(torch.mm(y_padded, torch.inverse(torch.mm(y_padded.t(), y_padded))), y_padded.t()), y_disease)
+        
+        return y_hex, y_dataset, y_raw
+
+
+'''
+class singleHex(torch.nn.Module):
     def __init__(self, model_core, dropout_ratio):
-        super(multi_output_model, self).__init__()
+        super(singleHex, self).__init__()
         
         self.densenet_model = model_core
         self.num_dataset = 2
@@ -285,7 +348,9 @@ class multi_output_model(torch.nn.Module):
         # to project
         y_hex = y_disease -  torch.mm(torch.mm(torch.mm(y_padded, torch.inverse(torch.mm(y_padded.t(), y_padded))), y_padded.t()), y_disease)
         
-        return y_hex, y_dataset, y_ra
+        return y_hex, y_dataset, y_raw
+'''
+
 
 
 # there can also be a v3 where we design a similar SE block!!! good!
@@ -452,7 +517,7 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
 
     """
     NUM_EPOCHS = 100
-    BATCH_SIZE = 256
+    BATCH_SIZE = 128
 
     if not os.path.exists("results/"):
         os.makedirs("results/")
@@ -462,7 +527,7 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     std = [0.229, 0.224, 0.225]
 
     # load labels
-    df = pd.read_csv("sampled_cheX_mimic.csv", index_col=0)
+    df = pd.read_csv("cheX_mimic.csv", index_col=0)
 
     # define torchvision transforms
     data_transforms = {
@@ -515,7 +580,7 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
     model = models.alexnet(pretrained=True)
     del model.classifier
     model.classifier = nn.Identity()
-    model_new = multi_output_model_v3(model, dropout_ratio=0.2)
+    model_new = singleHex(model, dropout_ratio=0.2)
     model_new.cuda()
     
 

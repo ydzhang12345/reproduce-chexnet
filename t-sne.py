@@ -33,7 +33,7 @@ import cxr_dataset as CXR
 
 ## load model
 PATH_TO_IMAGES = '/home/ben/Desktop/MIBLab/'
-path_model = 'results/checkpoint72'
+path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/checkpoint14'
 
 checkpoint = torch.load(path_model, map_location=lambda storage, loc: storage)
 model = checkpoint['model']
@@ -54,7 +54,7 @@ data_transforms = {
     ]),
 }
 
-BATCH_SIZE = 256
+BATCH_SIZE = 128
 dataset = CXR.CXRDataset(
     path_to_images=PATH_TO_IMAGES,
     fold="test",
@@ -64,45 +64,29 @@ dataloader = torch.utils.data.DataLoader(
 
 
 # first extract features: trained model before proj and after proj
-hex_flag = False
+hex_flag = True
 
-
+'''
 disease_feature_bank = []
 dataset_feature_bank = []
 label_disease_bank = []
 label_dataset_bank = []
+label_name = []
 with torch.no_grad():
     model.eval()
     for i, data in enumerate(dataloader):
-        inputs, label_disease, label_dataset, _ = data
-        label_dataset = label_dataset.to(dtype=torch.int64)
-        label_dataset = label_dataset.reshape(-1)
+        inputs, label_disease, label_dataset, data_name = data
+        #label_dataset = label_dataset.to(dtype=torch.int64)
+        #label_dataset = label_dataset.reshape(-1)
         batch_size = inputs.shape[0]
         inputs = Variable(inputs.cuda())
         label_disease = Variable(label_disease.cuda()).float()
-        label_dataset = Variable(label_dataset.cuda())
+        label_dataset = Variable(label_dataset.cuda()).float()
 
-        common_feature = model.densenet_model(inputs)
-        diseases_feature = F.leaky_relu(model.x1(common_feature))
-        diseases_feature = F.leaky_relu(model.x2(diseases_feature))
-        proj_disease = F.leaky_relu(model.x3(diseases_feature))
+        _, _, _, disease_feature, dataset_feature = model(inputs, 'val')
 
-        dataset_feature =  F.leaky_relu(model.c1(common_feature))
-        dataset_feature = F.normalize(dataset_feature, p=2, dim=0)
 
-        F_a = F.normalize(proj_disease, p=2, dim=0)
-        F_g = dataset_feature
-        #F_p = self.fc(torch.cat([diseases_feature, torch.zeros_like(dataset_feature)], 1)) 
-
-        ## start hex projection
-        F_l = F_a - torch.mm(torch.mm(torch.mm(F_g, torch.inverse(torch.mm(F_g.t(), F_g))), F_g.t()), F_a)
-        F_l = F.leaky_relu(self.fc(F_l))
-
-        # more linear layer
-        #F_l = F.sigmoid(model.fc(F_l)) * diseases_feature
-        #F_l = 
-
-        disease_feature = F_l.cpu().data.numpy()
+        disease_feature = disease_feature.cpu().data.numpy()
         dataset_feature = dataset_feature.cpu().data.numpy()
 
         label_disease = label_disease.cpu().data.numpy()
@@ -112,20 +96,25 @@ with torch.no_grad():
         dataset_feature_bank.append(dataset_feature)
         label_disease_bank.append(label_disease)
         label_dataset_bank.append(label_dataset)
+        label_name.append(data_name)
+
 disease_feature = np.concatenate(disease_feature_bank, axis=0)
 dataset_feature = np.concatenate(dataset_feature_bank, axis=0)
 label_disease = np.concatenate(label_disease_bank, axis=0)
 label_dataset = np.concatenate(label_dataset_bank, axis=0)
-plk_dict = {"x_disease": disease_feature, 'x_dataset': dataset_feature, 'y_disease': label_disease, 'y_dataset': label_dataset}
-
-
+plk_dict = {"x_disease": disease_feature, 'x_dataset': dataset_feature, 'y_disease': label_disease, 'y_dataset': label_dataset, 'y_name': label_name}
 '''
+
+
 disease_feature_bank = []
+hex_feature_bank = []
+disease_cat_bank = []
 label_disease_bank = []
 label_dataset_bank = []
 
+
 with torch.no_grad():
-    model.classifier = torch.nn.Identity()
+    #model.classifier = torch.nn.Identity()
     model.eval()
     for i, data in enumerate(dataloader):
         inputs, label_disease, label_dataset, _ = data
@@ -137,22 +126,51 @@ with torch.no_grad():
         label_dataset = Variable(label_dataset.cuda())
 
         #pdb.set_trace()
-        common_feature = model(inputs)
-        disease_feature = common_feature.cpu().data.numpy()
+        common_feature = model.common_feature(inputs)
+
+        dataset_feature =  F.elu(model.x1(common_feature))
+        dataset_feature = F.normalize(dataset_feature, p=2, dim=0)
+
+        diseases_feature = F.elu(model.x2(common_feature))
+        diseases_feature = F.normalize(diseases_feature, p=2, dim=0)
+
+        ## start hex projection
+        total_feature = model.x3(torch.cat([diseases_feature, dataset_feature], 1))
+        cat_dataset = model.x3(torch.cat([torch.zeros_like(diseases_feature), dataset_feature], 1))
+        disease_cat = model.x3(torch.cat([diseases_feature, torch.zeros_like(dataset_feature)], 1))
+        hex_feature = total_feature -  torch.mm(torch.mm(torch.mm(cat_dataset, torch.inverse(torch.mm(cat_dataset.t(), cat_dataset) + 1.0 * torch.diag(torch.ones(1024)).cuda())), cat_dataset.t()), total_feature)
+
+        disease_cat = F.elu(disease_cat)
+        hex_feature = F.elu(hex_feature)
+
+
+        disease_feature = diseases_feature.cpu().data.numpy()
+        hex_feature = hex_feature.cpu().data.numpy()
+        disease_cat = disease_cat.cpu().data.numpy()
+
+
         label_disease = label_disease.cpu().data.numpy()
         label_dataset = label_dataset.cpu().data.numpy()
         
         disease_feature_bank.append(disease_feature)
+        hex_feature_bank.append(hex_feature)
+        disease_cat_bank.append(disease_cat)
+
         label_disease_bank.append(label_disease)
         label_dataset_bank.append(label_dataset)
 
+    
+pdb.set_trace()
+
+hex_feature = np.concatenate(hex_feature_bank, axis=0)
+disease_cat = np.concatenate(disease_cat_bank, axis=0)
 disease_feature = np.concatenate(disease_feature_bank, axis=0)
 label_disease = np.concatenate(label_disease_bank, axis=0)
 label_dataset = np.concatenate(label_dataset_bank, axis=0)
 
-plk_dict = {"x_disease": disease_feature, 'y_disease': label_disease, 'y_dataset': label_dataset}
-'''
+plk_dict = {"hex": hex_feature, 'diseases_feature': disease_feature, 'disease_cat':disease_cat, 'y_disease': label_disease, 'y_dataset': label_dataset}
+
 print ('feature extraction done!')
 
-with open('extracted_feature_sigmoid.pkl', 'wb') as f:
+with open('extracted_features_hex_v3.pkl', 'wb') as f:
     pickle.dump(plk_dict, f)

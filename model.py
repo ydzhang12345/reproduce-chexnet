@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.optim import lr_scheduler
-from torch.autograd import Variable
+from torch.autograd import Variable, Function
 import torchvision
 from torchvision import datasets, models, transforms
 from torch.utils.data import Dataset, DataLoader
@@ -40,6 +40,17 @@ def setup_seed(seed):
      torch.cuda.manual_seed_all(seed)
      np.random.seed(seed)
      torch.backends.cudnn.deterministic = True
+
+class ReverseLayerF(Function):
+    @staticmethod
+    def forward(ctx, x, alpha):
+        ctx.alpha = alpha
+        return x.view_as(x)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        output = grad_output.neg() * ctx.alpha
+        return output, None
 
 setup_seed(2019)
 
@@ -156,10 +167,11 @@ def train_model(
                     print(loss1, "*****", loss2)
                     loss = loss1 + loss2
                     loss.backward()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
                     optimizer.step()
                 else:
                     optimizer.zero_grad()
-                    loss1 = criterion1(pred_raw, label_disease)
+                    loss1 = criterion1(pred_disease, label_disease)
                     loss2 = criterion2(pred_dataset, label_dataset)
                     #print(loss1, "*****", loss2)
                     loss = loss1 + loss2
@@ -195,6 +207,7 @@ def train_model(
                 print("decay loss from " + str(LR) + " to " +
                       str(LR / 10) + " as not seeing improvement in val loss")
                 LR = LR / 10
+                
                 # create new optimizer with lower learning rate
                 optimizer = optim.SGD(
                     filter(
@@ -203,8 +216,16 @@ def train_model(
                     lr=LR,
                     momentum=0.9,
                     weight_decay=weight_decay)
-                print("created new optimizer with LR " + str(LR))
+                
 
+                '''
+                optimizer = optim.Adam(
+                    filter(
+                        lambda p: p.requires_grad,
+                        model.parameters()),
+                    lr=LR)
+                print("created new optimizer with LR " + str(LR))
+                '''
             # checkpoint model if has best val loss yet
             if phase == 'val' and epoch_loss1 < best_loss:
                 best_loss = epoch_loss1
@@ -249,21 +270,26 @@ class singleHex(torch.nn.Module):
         
         self.x1 =  nn.Linear(9216, 32)
         nn.init.xavier_normal_(self.x1.weight)
+        #nn.init.kaiming_normal_(self.x1.weight)
         #self.bn1 = nn.BatchNorm1d(64,eps = 2e-1)
         
         self.x2 =  nn.Linear(9216, 4096)
         nn.init.xavier_normal_(self.x2.weight)
+        #nn.init.kaiming_normal_(self.x2.weight)
         #self.bn2 = nn.BatchNorm1d(512, eps = 2e-1)
 
         self.x3 = nn.Linear(4096, 4096)
         nn.init.xavier_normal_(self.x3.weight)
+        #nn.init.kaiming_normal_(self.x3.weight)
 
         #heads
         self.y1 = nn.Linear(32, self.num_dataset)
         nn.init.xavier_normal_(self.y1.weight)
+        #nn.init.kaiming_normal_(self.y1.weight)
 
         self.y2 = nn.Linear(4096 + 32, 5)
         nn.init.xavier_normal_(self.y2.weight)
+        #nn.init.kaiming_normal_(self.y2.weight)
         
         self.d_out = nn.Dropout(dropout_ratio)
 
@@ -294,67 +320,107 @@ class singleHex(torch.nn.Module):
         return y_hex, y_dataset, y_raw
 
 
-'''
-class singleHex(torch.nn.Module):
-    def __init__(self, model_core, dropout_ratio):
-        super(singleHex, self).__init__()
+class singleHex_v2(torch.nn.Module):
+    def __init__(self, model_core, dropout_ratio, num_dataset=2, num_disease=5):
+        super(singleHex_v2, self).__init__()
         
-        self.densenet_model = model_core
-        self.num_dataset = 2
-
-        #https://blog.csdn.net/Geek_of_CSDN/article/details/90179421
+        self.common_feature = model_core
+        self.num_dataset = num_dataset
+        self.num_disease = num_disease
         
         self.x1 =  nn.Linear(9216, 32)
-        nn.init.xavier_normal_(self.x1.weight)
-        #self.bn1 = nn.BatchNorm1d(64,eps = 2e-1)
-        
-        self.x2 =  nn.Linear(9216, 4096)
-        nn.init.xavier_normal_(self.x2.weight)
-        #self.bn2 = nn.BatchNorm1d(512, eps = 2e-1)
 
-        self.x3 = nn.Linear(4096, 4096)
-        nn.init.xavier_normal_(self.x3.weight)
+        self.x2 =  nn.Linear(9216, 4096)
+
+
+        self.x3 = nn.Linear(4096 + 32, 1024)
+
 
         #heads
         self.y1 = nn.Linear(32, self.num_dataset)
-        nn.init.xavier_normal_(self.y1.weight)
-
-        self.y2 = nn.Linear(4096 + 32, 5)
-        nn.init.xavier_normal_(self.y2.weight)
-        
+        self.y2 = nn.Linear(1024, self.num_disease)
         self.d_out = nn.Dropout(dropout_ratio)
 
-    def forward(self, x, phase):
 
+    def forward(self, x, phase):
         # prepare feature
         # l2-normalize as indicated in the paper
-        common_feature = self.densenet_model(x)
-        common_feature = self.d_out(common_feature)
-        # add dropout 
+        common_feature = self.common_feature(x)
+        common_feature = self.d_out(common_feature) 
 
-        dataset_feature =  F.relu(self.x1(common_feature)) # of 32
+        #common_block_feature = ReverseLayerF.apply(common_feature, 0.0)
+        #dataset_feature =  F.elu(self.x1(common_block_feature))
+        dataset_feature =  F.elu(self.x1(common_feature))
         dataset_feature = F.normalize(dataset_feature, p=2, dim=0)
 
-        diseases_feature = F.relu(self.x3(F.relu(self.x2(common_feature)))) # of 1024
+        diseases_feature = F.elu(self.x2(common_feature))
         diseases_feature = F.normalize(diseases_feature, p=2, dim=0)
 
         ## start hex projection
-        # prepare logits following hex paper and github
-        y_dataset = self.y1(dataset_feature) # this gonna be supervised   N x 32 -> N x 2
-        y_disease = self.y2(torch.cat([diseases_feature, dataset_feature], 1)) # N x 1056 -> N x 5
-        y_padded = self.y2(torch.cat([torch.zeros_like(diseases_feature), dataset_feature], 1))
-        y_raw = self.y2(torch.cat([diseases_feature, torch.zeros_like(dataset_feature)], 1))
+        total_feature = self.x3(torch.cat([diseases_feature, dataset_feature], 1))
+        cat_dataset = self.x3(torch.cat([torch.zeros_like(diseases_feature), dataset_feature], 1))
+        disease_cat = self.x3(torch.cat([diseases_feature, torch.zeros_like(dataset_feature)], 1))
 
-        # to project
-        y_hex = y_disease -  torch.mm(torch.mm(torch.mm(y_padded, torch.inverse(torch.mm(y_padded.t(), y_padded))), y_padded.t()), y_disease)
-        
-        return y_hex, y_dataset, y_raw
-'''
+        hex_feature = total_feature -  torch.mm(torch.mm(torch.mm(cat_dataset, torch.inverse(torch.mm(cat_dataset.t(), cat_dataset) + 5 * torch.diag(torch.ones(1024)).cuda())), cat_dataset.t()), total_feature)
 
+        y_dataset = self.y1(dataset_feature)
+        y_hex = self.y2(F.elu(hex_feature))
+        y_disease = self.y2(F.elu(disease_cat))
+
+        return y_hex, y_dataset, y_disease
+
+
+
+class singleHex_v3(torch.nn.Module):
+    def __init__(self, model_core, dropout_ratio, num_dataset=2, num_disease=5):
+        super(singleHex_v3, self).__init__()
+
+        self.common_feature = model_core
+        self.num_dataset = num_dataset
+        self.num_disease = num_disease
+        self.x1 =  nn.Linear(9216, 32)
+        self.x2 =  nn.Linear(9216, 4096)
+        self.x3 = nn.Linear(4096 + 32, 1024)
+
+        #heads
+        self.y1 = nn.Linear(1024, self.num_dataset)
+        self.y2 = nn.Linear(1024, self.num_disease)
+        self.d_out = nn.Dropout(dropout_ratio)
+
+
+    def forward(self, x, phase):
+        # prepare feature
+        # l2-normalize as indicated in the paper
+        common_feature = self.common_feature(x)
+        common_feature = self.d_out(common_feature)
+
+        #common_block_feature = ReverseLayerF.apply(common_feature, 0.0)
+        dataset_feature =  F.elu(self.x1(common_feature))
+        dataset_feature = F.normalize(dataset_feature, p=2, dim=0)
+
+        diseases_feature = F.elu(self.x2(common_feature))
+        diseases_feature = F.normalize(diseases_feature, p=2, dim=0)
+
+        ## start hex projection
+        total_feature = self.x3(torch.cat([diseases_feature, dataset_feature], 1))
+        cat_dataset = self.x3(torch.cat([torch.zeros_like(diseases_feature), dataset_feature], 1))
+        disease_cat = self.x3(torch.cat([diseases_feature, torch.zeros_like(dataset_feature)], 1))
+
+        hex_feature = total_feature -  torch.mm(torch.mm(torch.mm(cat_dataset, torch.inverse(torch.mm(cat_dataset.t(), cat_dataset) + 1.0 * torch.diag(torch.ones(1024)).cuda())), cat_dataset.t()), total_feature)
+
+        #y_dataset = self.y1(dataset_feature)
+        y_hex = self.y2(F.elu(hex_feature))
+        y_disease = self.y2(F.elu(disease_cat))
+
+
+        hex_dataset = total_feature - torch.mm(torch.mm(torch.mm(disease_cat, torch.inverse(torch.mm(disease_cat.t(), disease_cat) + 1.0 * torch.diag(torch.ones(1024)).cuda())), disease_cat.t()), total_feature)
+        y_dataset = self.y1(F.elu(hex_dataset))
+
+
+        return y_hex, y_dataset, y_disease
 
 
 # there can also be a v3 where we design a similar SE block!!! good!
-
 class multi_output_model_v2(torch.nn.Module):
     def __init__(self, model_core, dropout_ratio):
         super(multi_output_model_v2, self).__init__()
@@ -577,20 +643,22 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
 
     
     #model = models.densenet121(pretrained=True)
+    '''
     model = models.alexnet(pretrained=True)
     del model.classifier
     model.classifier = nn.Identity()
-    model_new = singleHex(model, dropout_ratio=0.2)
+    model_new = singleHex_v3(model, dropout_ratio=0.2)
     model_new.cuda()
+    '''
     
 
-    '''
-    path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/checkpoint8'
+    
+    path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/checkpoint1'
     checkpoint = torch.load(path_model, map_location=lambda storage, loc: storage)
     model_new = checkpoint['model']
     model_new.cuda()
     del checkpoint
-    '''
+    
     
     
     
@@ -605,6 +673,7 @@ def train_cnn(PATH_TO_IMAGES, LR, WEIGHT_DECAY):
         lr=LR,
         momentum=0.9,
         weight_decay=WEIGHT_DECAY)
+    
     
 
     '''

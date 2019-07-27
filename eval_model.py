@@ -58,31 +58,11 @@ def make_pred_multilabel(data_transforms, model, PATH_TO_IMAGES):
             label_dataset = label_dataset.reshape(-1)
 
             batch_size = inputs.shape[0]
-            #inputs = Variable(inputs)
-
-                
+             
             inputs = Variable(inputs.cuda())
             label_disease = Variable(label_disease.cuda()).float()
             label_dataset = Variable(label_dataset.cuda())
 
-            #label_disease = Variable(label_disease).float()
-            #label_dataset = Variable(label_dataset)
-
-
-            #inputs, labels, _ = data
-            #labels = labels.to(dtype=torch.int64)
-            #labels = labels.reshape(-1)
-            #inputs, labels = Variable(inputs.cuda()), Variable(labels.cuda())
-
-            #true_labels = labels.cpu().data.numpy()
-            #batch_size = true_labels.shape
-
-            ### test
-            #temp = model.densenet_model(inputs)
-            #raw_pred = model.y2(torch.cat([model.x2(temp), torch.zeros(temp.shape[0], 32).cuda()], dim=1))
-            #disease_pred = torch.zeros_like(raw_pred).cuda()
-            #dataset_pred = torch.zeros(temp.shape[0], 2).cuda()
-            #pdb.set_trace()
 
             disease_pred, dataset_pred, raw_pred = model.forward(inputs, "val")
             disease_pred = torch.sigmoid(disease_pred)
@@ -113,18 +93,10 @@ def make_pred_multilabel(data_transforms, model, PATH_TO_IMAGES):
 
                 pred_df = pred_df.append(thisrow, ignore_index=True)
                 true_df = true_df.append(truerow, ignore_index=True)
-            #break
-
-            #count +=1 
-            #if count > 100:
-            #    break
-                #pdb.set_trace()
                 
             if(i % 10 == 0):
                 print(str(i * BATCH_SIZE))
-        print(total_acc) #/ ((i+1)*BATCH_SIZE*5))
-        print (acc.to(dtype=torch.float32)) #/ ((i+1)*BATCH_SIZE)) 
-        #pdb.set_trace()
+
         auc_df = pd.DataFrame(columns=["label", "auc"])
         # calc AUCs
         #pdb.set_trace()

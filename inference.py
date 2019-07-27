@@ -33,9 +33,10 @@ def setup_seed(seed):
      np.random.seed(seed)
      torch.backends.cudnn.deterministic = True
 
+
 setup_seed(2019)
 path_images = '/home/ben/Desktop/MIBLab/'
-path_model = 'results/checkpoint-gold'
+path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/singleHex_v2_lam5/checkpoint15'
 
 checkpoint = torch.load(path_model, map_location=lambda storage, loc: storage)
 model = checkpoint['model']

@@ -1,6 +1,7 @@
 import csv
 
 bank = []
+'''
 with open('./cheXpert_labels.csv') as file:
 	reader = csv.reader(file, quotechar='|')
 	count = 0
@@ -11,7 +12,19 @@ with open('./cheXpert_labels.csv') as file:
 		bank.append([row[0], 1, row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10], row[11]])
 
 
-with open('./nih_labels.csv') as file:
+with open('./mimic_labels.csv') as file:
+	reader = csv.reader(file, quotechar='|')
+	count = 0
+	for row in reader:
+		if count==0:
+			count += 1
+			continue
+		bank.append(['MIMIC/' + row[0], 0, row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10]])
+'''
+
+
+
+with open('./nih_labels_raw.csv') as file:
 	reader = csv.reader(file, quotechar='|')
 	count = 0
 	for row in reader:

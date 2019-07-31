@@ -33,7 +33,7 @@ import cxr_dataset as CXR
 
 ## load model
 PATH_TO_IMAGES = '/home/ben/Desktop/MIBLab/'
-path_model = 'checkpoint100'
+path_model = 'results/checkpoint19'
 
 checkpoint = torch.load(path_model, map_location=lambda storage, loc: storage)
 model = checkpoint['model']
@@ -54,7 +54,7 @@ data_transforms = {
     ]),
 }
 
-BATCH_SIZE = 256
+BATCH_SIZE = 128
 dataset = CXR.CXRDataset(
     path_to_images=PATH_TO_IMAGES,
     fold="test",
@@ -137,5 +137,5 @@ plk_dict = {"x_disease": disease_feature, 'y_disease': label_disease, 'y_dataset
 '''
 print ('feature extraction done!')
 
-with open('extracted_feature_sigmoid.pkl', 'wb') as f:
+with open('extracted_feature_dann_ckpt19.pkl', 'wb') as f:
     pickle.dump(plk_dict, f)

@@ -27,7 +27,7 @@ import pdb
 
 
 path_images = '/home/ben/Desktop/MIBLab/'
-path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/checkpoint11'
+path_model = '/home/ben/Desktop/MIBLab/hospital-cls/reproduce-chexnet/results/checkpoint19'
 
 checkpoint = torch.load(path_model, map_location=lambda storage, loc: storage)
 model = checkpoint['model']

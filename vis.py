@@ -3,12 +3,13 @@ import numpy as np
 import sklearn
 import matplotlib.pyplot as plt
 from sklearn import manifold, datasets
+from MulticoreTSNE import MulticoreTSNE as TSNE
 import pdb
 
 
 
 # read feature
-with open('extracted_feature_sigmoid.pkl', 'rb') as f:
+with open('extracted_feature_dann_ckpt19.pkl', 'rb') as f:
 	extract_dict = pickle.load(f)
 	x_disease, y_disease_raw = extract_dict['x_disease'], extract_dict['y_disease']
 	#x_dataset, y_dataset = extract_dict['x_dataset'], extract_dict['y_dataset']
@@ -23,7 +24,7 @@ for i in range(y_disease_raw.shape[0]):
 
 
 # t-sne
-tsne = manifold.TSNE(n_components=2, init='pca', random_state=501)
+tsne = TSNE(n_jobs=6)
 X_tsne = tsne.fit_transform(x_disease)
 
 print("Org data dimension is {}. Embedded data dimension is {}".format(x_disease.shape[-1], X_tsne.shape[-1]))

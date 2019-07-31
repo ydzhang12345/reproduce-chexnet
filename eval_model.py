@@ -28,7 +28,7 @@ def make_pred_multilabel(data_transforms, model, PATH_TO_IMAGES):
 
     with torch.no_grad():
         # calc preds in batches of 16, can reduce if your GPU has less RAM
-        BATCH_SIZE = 50
+        BATCH_SIZE = 128
 
         # set model to eval mode; required for proper predictions given use of batchnorm
         model.train(False)
@@ -58,30 +58,15 @@ def make_pred_multilabel(data_transforms, model, PATH_TO_IMAGES):
             label_dataset = label_dataset.reshape(-1)
 
             batch_size = inputs.shape[0]
-            #inputs = Variable(inputs)
-
                 
             inputs = Variable(inputs.cuda())
             label_disease = Variable(label_disease.cuda()).float()
             label_dataset = Variable(label_dataset.cuda())
 
-            #label_disease = Variable(label_disease).float()
-            #label_dataset = Variable(label_dataset)
 
+            class_out, dataset_pred = model.forward(inputs, 1)
 
-            #inputs, labels, _ = data
-            #labels = labels.to(dtype=torch.int64)
-            #labels = labels.reshape(-1)
-            #inputs, labels = Variable(inputs.cuda()), Variable(labels.cuda())
-
-            #true_labels = labels.cpu().data.numpy()
-            #batch_size = true_labels.shape
-
-            disease_pred, dataset_pred, raw_pred = model.forward(inputs, "val")
-            #disease_pred = torch.sigmoid(disease_pred)
-            disease_pred = torch.sigmoid(raw_pred)
-
-            probs = disease_pred.cpu().data.numpy()
+            probs = class_out.cpu().data.numpy()
             acc += torch.sum(dataset_pred.argmax(dim=1)==label_dataset)
             # get predictions and true values for each item in batch
             label_disease = label_disease.cpu().data.numpy()
